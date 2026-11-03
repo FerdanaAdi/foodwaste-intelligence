@@ -1,0 +1,1 @@
+"""FWI synthetic-data prototype."""
