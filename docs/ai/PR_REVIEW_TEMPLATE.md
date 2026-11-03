@@ -1,0 +1,15 @@
+# AI PR review record
+- PR / task:
+- Implementer (platform/model):
+- Independent reviewer (platform/model):
+- Diff scope (paths):
+- Acceptance criteria and evidence:
+- Tests actually run + results:
+- Blocker findings (file:line, reproduce):
+- Major findings (file:line, reproduce):
+- Minor findings:
+- Security/privacy/licensing concerns:
+- FWI event-lineage/mass-basis/KPI gate concerns:
+- Open issues:
+- Reviewer recommendation: PASS / PASS_WITH_CONDITIONS / CHANGES_REQUIRED
+- **Human approval:** Pending (do not auto-merge)

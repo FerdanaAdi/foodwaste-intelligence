@@ -1,0 +1,11 @@
+# FWI AI Handoff (update after each completed task; keep <=15 lines)
+- **Task / branch:** Not started
+- **Current owner / model:** —
+- **Goal:** —
+- **Files changed:** —
+- **Decision / reason:** —
+- **Tests run / actual result:** Not run
+- **Blocked by / reproducible error:** —
+- **Open risks / assumptions:** —
+- **Next precise action:** Select task and create isolated branch/worktree.
+- **Reviewer / approval:** Not requested

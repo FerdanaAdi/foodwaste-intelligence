@@ -1,0 +1,40 @@
+{
+  "$schema": "https://repomix.com/schemas/latest/schema.json",
+  "output": {
+    "filePath": "repomix-scoped.xml",
+    "style": "xml",
+    "parsableStyle": false,
+    "compress": true,
+    "removeComments": false,
+    "showLineNumbers": false,
+    "topFilesLength": 5
+  },
+  "ignore": {
+    "useGitignore": true,
+    "useDefaultPatterns": true,
+    "customPatterns": [
+      "**/.env",
+      "**/.env.*",
+      "**/*secret*",
+      "**/*credential*",
+      "**/*.pem",
+      "**/*.key",
+      "**/node_modules/**",
+      "**/.next/**",
+      "**/dist/**",
+      "**/build/**",
+      "**/coverage/**",
+      "**/data/private/**",
+      "**/fixtures/real/**",
+      "**/*.pdf",
+      "**/*.docx",
+      "**/*.xlsx",
+      "**/*.zip",
+      "**/research-archive/**",
+      "**/.git/**"
+    ]
+  },
+  "security": {
+    "enableSecurityCheck": true
+  }
+}

@@ -1,0 +1,21 @@
+# Secrets and local/private data
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+.DS_Store
+node_modules/
+.next/
+dist/
+build/
+coverage/
+.cache/
+__pycache__/
+*.pyc
+repomix-scoped.xml
+repomix-output.*
+data/private/
+fixtures/real/
