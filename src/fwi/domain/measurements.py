@@ -1,12 +1,12 @@
-"""Minimal synthetic-data domain validation prototype.
-
-Vocabulary in this module is PROVISIONAL and is not an FWI-03 standard.
-"""
+"""PROVISIONAL measurement vocabulary; not an FWI-03 standard."""
 
 from dataclasses import dataclass
 from datetime import datetime
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from typing import Optional
+
+from .events import MaterialWasteEvent
+from .validation import _decimal
 
 
 PROVISIONAL_OBSERVATION_STATUSES = {
@@ -24,33 +24,6 @@ PROVISIONAL_MASS_BASES = {
     "other_documented",
 }
 PROVISIONAL_UNITS = {"kg"}  # v0.1 limitation; not an FWI final unit standard.
-
-
-def _decimal(value: object, field: str) -> Optional[Decimal]:
-    if value is None:
-        return None
-    try:
-        value_decimal = Decimal(str(value))
-    except (InvalidOperation, ValueError) as exc:
-        raise ValueError(f"{field} must be a decimal") from exc
-    if not value_decimal.is_finite():
-        raise ValueError(f"{field} must be finite")
-    return value_decimal
-
-
-@dataclass(frozen=True)
-class MaterialWasteEvent:
-    waste_event_id: str
-    organization_id: str
-    site_id: str
-    occurred_at: datetime
-    recorded_at: datetime
-
-    def __post_init__(self) -> None:
-        if not self.waste_event_id:
-            raise ValueError("waste_event_id is required")
-        if not self.organization_id or not self.site_id:
-            raise ValueError("organization_id and site_id are required")
 
 
 @dataclass(frozen=True)

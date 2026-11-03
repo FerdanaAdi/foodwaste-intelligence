@@ -1,6 +1,7 @@
 import unittest
 from datetime import datetime, timezone
-from fwi_domain import MaterialWasteEvent, MeasurementRecord, repeated_measurements
+from fwi.domain.events import MaterialWasteEvent
+from fwi.domain.measurements import MeasurementRecord, repeated_measurements
 
 
 def event() -> MaterialWasteEvent:
