@@ -3,8 +3,15 @@
 ## Goal
 Build a **synthetic-data-only prototype** of FoodWaste Intelligence (FWI), an independent measurement/analytics/decision-support layer for MBG/SPPG food loss/waste. **Not** an official BGN system or automatic integration with government APIs.
 
-## Source priority
-FWI-04 MVP Blueprint v0.1 (scope) > FWI-03 Methodology v1.3 (measurement/KPI definitions) > FWI-02 Architecture v1.0 (events/data) > FWI-01 Research Foundation v1.0 (context). Check latest approved versions. If source unavailable: report the gap; do not guess regulations/formulas.
+## Source precedence (by concern)
+Apply the source that governs the concern at hand; this is not a single global ranking:
+- Product scope/priorities -> PRD `docs/product/PRD-v0.1.md` / FWI-04 MVP Blueprint v0.1.
+- Methodology/KPI/mass rules -> FWI-03 Methodology v1.3 (measurement/KPI definitions).
+- Event/data semantics -> FWI-02 Architecture v1.0 + repo domain contract `docs/domain/waste-event-measurement-v0.1.md`.
+- Accepted technology choices -> accepted ADRs (`docs/architecture/adr/`).
+- Active task control files (e.g. this file, `docs/ai/TASK_TEMPLATE.md`) may constrain how files change but cannot override higher-level accepted decisions.
+
+Accepted ADRs supersede earlier `OPEN` technology statements in older architecture/context documents. Check latest approved versions. If a source is unavailable: report the gap; do not guess regulations/formulas.
 
 ## Nonnegotiable domain constraints
 - A single actual waste-generation occurrence has **one stable event identity**. Remeasurement, transfer, rescue and disposal are **not** new generation events.

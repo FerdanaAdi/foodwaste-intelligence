@@ -1,6 +1,8 @@
-# FWI AI model routing v1.0 — **provisional**
+# FWI AI model routing v1.1 — **provisional**
 
-Role assignment saves context and coordination; it is **not a proven performance ranking**. Model identifiers/effort controls must match the live account selector; if they differ, use the **role**, not a hallucinated model name. Respect quota and data permissions.
+Role assignment saves context and coordination; it is **not a proven performance ranking**. Routing is **capability/role-first** (Fast / Core / Deep by risk); specific model names in the table are `PROPOSAL_CANDIDATE` routing examples that depend on current availability/selector/quota — **not** permanent user ownership or subscription facts. Absence from one inventory does not mean the user lacks a tool/model. Model identifiers/effort controls must match the live account selector; if they differ, use the **role**, not a hallucinated model name. Respect quota and data permissions.
+
+Working arrangement: **one implementer** per task; **one independent reviewer** for material/risky changes only.
 
 | Task | Default role/environment | Effort | Independent reviewer (when risk warrants) |
 |---|---|---|---|

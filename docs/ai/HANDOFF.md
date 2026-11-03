@@ -1,11 +1,11 @@
 # FWI AI Handoff (update after each completed task; keep <=15 lines)
-- **Task / branch:** Not started
-- **Current owner / model:** —
-- **Goal:** —
-- **Files changed:** —
-- **Decision / reason:** —
-- **Tests run / actual result:** Not run
-- **Blocked by / reproducible error:** —
-- **Open risks / assumptions:** —
-- **Next precise action:** Select task and create isolated branch/worktree.
-- **Reviewer / approval:** Not requested
+- **Task / branch:** FWI-GOV-001 baseline reconciliation on `docs/fwi-gov-001-baseline-reconciliation`
+- **Current owner / model:** GLM-5.3-Flash (ZCode) as implementer
+- **Goal:** Reconcile AI/context/architecture docs with accepted ADR-001/ADR-002; no backend implementation.
+- **Files changed:** `AGENTS.md`, `docs/ai/CONTEXT.md`, `docs/ai/AI_MODEL_ROUTING.md`, `docs/ai/HANDOFF.md`, `.agents/skills/fwi-domain/SKILL.md`, `.agents/skills/fwi-oss-audit/SKILL.md`, `docs/architecture/FWI-ARCH-001_System_Data_Architecture_v0.2.md` (new), `.gitignore`.
+- **Decision / reason:** ADR-001/ADR-002 accepted; OPEN decisions left open; `plate_leftover` aligned to FWI-02 v1.0 (stream, not mass basis; PRD OPEN-01).
+- **Tests run / actual result:** `verify_kit.py` PASS; 11 domain unit tests PASS.
+- **Blocked by / reproducible error:** `scripts/fwi.cmd start/pr` refuses on untracked task file (`FWI-GOV-001_Codex_Task.md`); manual safe git workflow used instead; helper untouched.
+- **Open risks / assumptions:** API style (OD-ARCH-06) kept OPEN despite FastAPI baseline; final mass-basis vocabulary still source-gated.
+- **Next precise action:** Human review + approval of PR; then backend bootstrap / physical schema as separate task.
+- **Reviewer / approval:** PR created, awaiting human review; not merged.
