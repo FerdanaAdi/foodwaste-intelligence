@@ -7,5 +7,5 @@
 - **Tests run / actual result:** `verify_kit.py` PASS; 11 domain unit tests PASS.
 - **Blocked by / reproducible error:** `scripts/fwi.cmd start/pr` refuses on untracked task file (`FWI-GOV-001_Codex_Task.md`); manual safe git workflow used instead; helper untouched.
 - **Open risks / assumptions:** API style (OD-ARCH-06) kept OPEN despite FastAPI baseline; final mass-basis vocabulary still source-gated.
-- **Next precise action:** Human review + approval of PR; then backend bootstrap / physical schema as separate task.
-- **Reviewer / approval:** PR created, awaiting human review; not merged.
+- **Next precise action:** Follow-ups: non-blocking review findings on README/PRD; then backend bootstrap / physical schema as separate task.
+- **Reviewer / approval:** FWI-GOV-001 PR #8 approved and merged (merge commit `11e03b4`); this post-merge status patch awaits human review, not auto-merged.
