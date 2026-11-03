@@ -15,6 +15,11 @@ coverage/
 .cache/
 __pycache__/
 *.pyc
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 repomix-scoped.xml
 repomix-output.*
 data/private/

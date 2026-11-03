@@ -12,7 +12,9 @@ Gunakan skill ini ketika pengguna meminta: (1) mengingat atau mencari daftar rep
 - Proyek: **FoodWaste Intelligence (FWI)** untuk pengukuran, pencatatan, analisis, dan dukungan keputusan terkait food loss/waste pada proses MBG/SPPG.
 - FWI adalah **lapisan analitik tambahan**, bukan pengganti sistem pemerintah, bukan sistem akuntansi resmi, dan bukan aplikasi yang otomatis berhak menggunakan API SIPGN/AKSIS/LPDH/Stop Boros Pangan.
 - Acuan internal berurutan: `FWI-01 Research Foundation v1.0 Consolidated`; `FWI-02 Critical Reconciliation and Architecture Baseline v1.0`; `FWI-03 Consolidated Methodology v1.3` beserta G0/G1–G2; `FWI-04 MVP Product Requirements & Solution Blueprint v0.1`.
-- **FWI-04 merupakan baseline desain MVP, bukan spesifikasi produksi.** Jangan tetapkan stack sebagai keputusan final; baseline bersifat stack-agnostic sampai pertimbangan offline, biaya, keamanan, dan operasi diselesaikan.
+- **FWI-04 merupakan baseline desain MVP, bukan spesifikasi produksi.**
+- **Keputusan teknologi yang sudah diterima tidak boleh diubah oleh audit OSS:** ADR-001 (FastAPI / Python 3.14.x / SQLAlchemy 2.1 sync / Alembic) dan ADR-002 (PostgreSQL 18.x canonical; SQLite bukan persistence kanonik). Area yang masih terbuka (frontend, auth, evidence/object storage, API style, deployment/hosting, offline/sync) boleh mengevaluasi kandidat pihak ketiga.
+- Adopsi OSS tetap memerlukan review lisensi, provenance, maintenance, security, dan kecocokan dengan FWI. **Mempelajari pola berbeda dari menyalin/mengadopsi kode** — inspeksi pola tidak menghasilkan kewajiban lisensi, penyalinan kode iya.
 - Status metodologi per dokumen saat ini: 24 kandidat KPI (3 lulus desain rumus, 18 bersyarat, 3 ditahan: OP-08, FI-02, NI-03); G0 desk validation selesai, persetujuan formal/ahli/bench/field/aktivasi belum ditutup. Periksa versi dokumen paling baru sebelum membuat klaim.
 
 ## Inventaris tools AI yang dikonfirmasi pengguna
