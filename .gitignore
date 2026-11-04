@@ -24,3 +24,6 @@ repomix-scoped.xml
 repomix-output.*
 data/private/
 fixtures/real/
+
+# Python packaging build artifacts
+*.egg-info/
