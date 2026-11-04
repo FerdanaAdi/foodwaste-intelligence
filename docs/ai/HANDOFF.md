@@ -5,7 +5,9 @@
 - **Scope:** five demo tables, Alembic demo_0001, event/measurement create/read, atomic creation audit, seed and tests.
 - **Decisions:** UUID, unscaled NUMERIC, kg-only, provisional vocabulary/routes; no rounding/reconciliation policy invented.
 - **Sources:** ADR-001/002 and repo contract read; original FWI-02/03/04 unavailable locally.
-- **Tests:** `.venv/Scripts/python.exe -B -m pytest -q -p no:cacheprovider`: 46 passed, 11 PostgreSQL skipped (no local instance); kit verifier PASS.
+- **Tests (controlled verification):** targeted guard + backend regression pytest: 59 passed, 0 failed, 0 skipped; 6 subtests passed.
 - **PostgreSQL evidence:** CI run 41778661471 at code commit 8259e49: PostgreSQL 18.6; `python -m pytest -v` 57 passed, 0 skipped, 6 subtests passed; kit PASS.
 - **Risk:** no auth; isolated synthetic demo only; no deployment, real data, integrations, or held KPIs.
-- **Next:** PR #13 independent/human review before merge; no merge/deploy performed.
+- **Guard:** exact fwi_test/fwi_demo_test/PG18 required before schema DDL; UUID4 prefix and created OID/ownership checked on cleanup; CI identity aligned.
+- **Local blocker:** host psql read-only SELECT with both roles: no password supplied (127.0.0.1 and localhost); no migration, schema create/drop or local persistence tests executed.
+- **Next:** owner configures private pgpass for host execution; verify identity/objects/revision, then authorized dev upgrade + isolated test schemas. PR #13 remains unmerged.

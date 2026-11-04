@@ -44,11 +44,18 @@ from fwi.infrastructure.database.demo_seed import seed_demo
 seed_demo(create_session_factory(os.environ['FWI_DATABASE_URL']))
 ```
 
-For tests supply `FWI_TEST_DATABASE_URL` pointing ONLY at a disposable synthetic database
-and set `FWI_REQUIRE_POSTGRES=1`. Run `python -B -m pytest -v`.
+For tests use `FWI_TEST_DATABASE_URL=postgresql+psycopg://fwi_test@127.0.0.1:5432/fwi_demo_test`
+with credentials supplied privately by libpq's pgpass file; never print the file.
+Set `FWI_REQUIRE_POSTGRES=1` and run `python -B -m pytest -v`.
+The fixture fails closed unless the connected role/database are exactly
+`fwi_test` / `fwi_demo_test` on PostgreSQL 18, before CREATE SCHEMA.
 Tests create a random `fwi_demo_test_<uuid>` schema, apply the real migration, check
 mapping drift, seed synthetic org/site, then remove only that schema. User tables are
-not targets. The connection needs schema-creation privileges in that test database.
+not targets. Cleanup checks the exact created schema OID and current role ownership,
+and never deletes a pre-existing/colliding/replaced schema. The name must have the
+`fwi_demo_test_` prefix and a UUID4 hex suffix. The connection needs schema-creation privileges.
+Dev migrations require separately verified `fwi_dev` / `fwi_demo_dev`, a clean or
+expected Alembic-managed target, and owner authorization; tests never target dev.
 Without the URL, PostgreSQL tests skip explicitly: skips are not persistence evidence.
 The PR workflow provisions a disposable PostgreSQL 18 service and requires the tests.
 

@@ -7,7 +7,7 @@ No SQLite substitute. No production database is authorized for this test.
 import os
 from pathlib import Path
 from unittest.mock import patch
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from alembic import command
@@ -29,6 +29,32 @@ from fwi.infrastructure.database.session import create_engine_for_url, create_se
 from test_demo_validation import measurement_payload
 
 
+def verify_test_target(connection, schema):
+    """Fail closed before any schema DDL, including cleanup."""
+    suffix = schema.removeprefix('fwi_demo_test_')
+    if (not schema.startswith('fwi_demo_test_') or len(suffix) != 32
+            or UUID(hex=suffix).version != 4 or UUID(hex=suffix).hex != suffix):
+        raise RuntimeError('test schema must have the required prefix and UUID4 suffix')
+    identity = connection.execute(text(
+        "SELECT current_user AS role, current_database() AS database, "
+        "current_setting('server_version_num')::integer AS version"
+    )).mappings().one()
+    if (identity['role'] != 'fwi_test' or identity['database'] != 'fwi_demo_test'
+            or not 180000 <= identity['version'] < 190000):
+        raise RuntimeError('refusing schema DDL: requires fwi_test / fwi_demo_test / PostgreSQL 18')
+
+
+def drop_created_schema(connection, schema, created_oid):
+    verify_test_target(connection, schema)
+    current_oid = connection.scalar(text(
+        "SELECT oid FROM pg_namespace WHERE nspname = :schema "
+        "AND nspowner = (SELECT oid FROM pg_roles WHERE rolname = current_user)"
+    ), {'schema': schema})
+    if created_oid is None or current_oid != created_oid:
+        raise RuntimeError('refusing cleanup: schema is not the one created by this fixture')
+    connection.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
+
+
 @pytest.fixture
 def database(monkeypatch):
     url = os.getenv('FWI_TEST_DATABASE_URL')
@@ -38,15 +64,18 @@ def database(monkeypatch):
         pytest.skip('real PostgreSQL 18 not configured; persistence NOT verified')
     engine = create_engine_for_url(url)
     schema = 'fwi_demo_test_' + uuid4().hex
-    with engine.begin() as connection:
-        version = int(connection.scalar(text('SHOW server_version_num')))
-        assert 180000 <= version < 190000, 'PostgreSQL 18 required'
-        connection.execute(text(f'CREATE SCHEMA "{schema}"'))
-    scoped_url = make_url(url).update_query_dict({'options': f'-csearch_path={schema}'})
-    # Never log credentials; this URL is passed in memory only.
-    scoped = scoped_url.render_as_string(hide_password=False)
-    factory = create_session_factory(scoped)
+    factory = None
+    created_oid = None
     try:
+        with engine.begin() as connection:
+            verify_test_target(connection, schema)
+            connection.execute(text(f'CREATE SCHEMA "{schema}"'))
+            schema_oid = connection.scalar(text('SELECT oid FROM pg_namespace WHERE nspname = :schema'), {'schema': schema})
+        created_oid = schema_oid  # only after CREATE transaction committed successfully
+        scoped_url = make_url(url).update_query_dict({'options': f'-csearch_path={schema}'})
+        # Never log credentials; this URL is passed in memory only.
+        scoped = scoped_url.render_as_string(hide_password=False)
+        factory = create_session_factory(scoped)
         with factory.kw['bind'].begin() as connection:
             config = Config(str(Path(__file__).resolve().parents[1] / 'alembic.ini'))
             config.attributes['connection'] = connection
@@ -57,11 +86,14 @@ def database(monkeypatch):
         monkeypatch.setenv('FWI_DATABASE_URL', scoped)
         yield factory
     finally:
-        factory.kw['bind'].dispose()
-        # Only the random schema created by this fixture is removed.
-        with engine.begin() as connection:
-            connection.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
-        engine.dispose()
+        try:
+            if factory is not None:
+                factory.kw['bind'].dispose()
+            if created_oid is not None:
+                with engine.begin() as connection:
+                    drop_created_schema(connection, schema, created_oid)
+        finally:
+            engine.dispose()
 
 
 def new_event(client):

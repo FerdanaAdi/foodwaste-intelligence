@@ -11,16 +11,16 @@ jobs:
       postgres:
         image: postgres:18
         env:
-          POSTGRES_USER: fwi_synthetic
+          POSTGRES_USER: fwi_test
           POSTGRES_PASSWORD: synthetic_ci_only
-          POSTGRES_DB: fwi_synthetic_test
+          POSTGRES_DB: fwi_demo_test
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U fwi_synthetic -d fwi_synthetic_test"
+          --health-cmd "pg_isready -U fwi_test -d fwi_demo_test"
           --health-interval 5s --health-timeout 5s --health-retries 10
     env:
-      FWI_TEST_DATABASE_URL: postgresql+psycopg://fwi_synthetic:synthetic_ci_only@localhost:5432/fwi_synthetic_test
+      FWI_TEST_DATABASE_URL: postgresql+psycopg://fwi_test:synthetic_ci_only@localhost:5432/fwi_demo_test
       FWI_REQUIRE_POSTGRES: '1'
     steps:
       - uses: actions/checkout@v4
