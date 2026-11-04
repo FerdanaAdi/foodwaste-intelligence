@@ -1,11 +1,11 @@
 # FWI AI Handoff (update after each completed task; keep <=15 lines)
-- **Task / branch:** FWI-GOV-001 baseline reconciliation on `docs/fwi-gov-001-baseline-reconciliation`
-- **Current owner / model:** GLM-5.3-Flash (ZCode) as implementer
-- **Goal:** Reconcile AI/context/architecture docs with accepted ADR-001/ADR-002; no backend implementation.
-- **Files changed:** `AGENTS.md`, `docs/ai/CONTEXT.md`, `docs/ai/AI_MODEL_ROUTING.md`, `docs/ai/HANDOFF.md`, `.agents/skills/fwi-domain/SKILL.md`, `.agents/skills/fwi-oss-audit/SKILL.md`, `docs/architecture/FWI-ARCH-001_System_Data_Architecture_v0.2.md` (new), `.gitignore`.
-- **Decision / reason:** ADR-001/ADR-002 accepted; OPEN decisions left open; `plate_leftover` aligned to FWI-02 v1.0 (stream, not mass basis; PRD OPEN-01).
-- **Tests run / actual result:** `verify_kit.py` PASS; 11 domain unit tests PASS.
-- **Blocked by / reproducible error:** `scripts/fwi.cmd start/pr` refuses on untracked task file (`FWI-GOV-001_Codex_Task.md`); manual safe git workflow used instead; helper untouched.
-- **Open risks / assumptions:** API style (OD-ARCH-06) kept OPEN despite FastAPI baseline; final mass-basis vocabulary still source-gated.
-- **Next precise action:** Follow-ups: non-blocking review findings on README/PRD; then backend bootstrap / physical schema as separate task.
-- **Reviewer / approval:** FWI-GOV-001 PR #8 approved and merged (merge commit `11e03b4`); this post-merge status patch awaits human review, not auto-merged.
+- **Task / branch:** FWI-DATA-001 / `feat/fwi-data-001-demo-persistence`.
+- **Owner:** Codex implementer; owner approved five entities for synthetic Demo v0.1 only.
+- **Base:** origin/main `abed85e`; PR #12 verified MERGED. Untracked GOV task preserved.
+- **Scope:** five demo tables, Alembic demo_0001, event/measurement create/read, atomic creation audit, seed and tests.
+- **Decisions:** UUID, unscaled NUMERIC, kg-only, provisional vocabulary/routes; no rounding/reconciliation policy invented.
+- **Sources:** ADR-001/002 and repo contract read; original FWI-02/03/04 unavailable locally.
+- **Tests:** `.venv/Scripts/python.exe -B -m pytest -q -p no:cacheprovider`: 46 passed, 11 PostgreSQL skipped (no local instance); kit verifier PASS.
+- **Verification pending:** PostgreSQL 18 CI uses actual migration, isolated synthetic schemas, persistence/restart, constraints and rollback tests; do not treat local skips as PASS.
+- **Risk:** no auth; isolated synthetic demo only; no deployment, real data, integrations, or held KPIs.
+- **Next:** inspect PostgreSQL CI evidence and independent/human review before merge.
