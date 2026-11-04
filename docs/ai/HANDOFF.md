@@ -6,6 +6,6 @@
 - **Decisions:** UUID, unscaled NUMERIC, kg-only, provisional vocabulary/routes; no rounding/reconciliation policy invented.
 - **Sources:** ADR-001/002 and repo contract read; original FWI-02/03/04 unavailable locally.
 - **Tests:** `.venv/Scripts/python.exe -B -m pytest -q -p no:cacheprovider`: 46 passed, 11 PostgreSQL skipped (no local instance); kit verifier PASS.
-- **Verification pending:** PostgreSQL 18 CI uses actual migration, isolated synthetic schemas, persistence/restart, constraints and rollback tests; do not treat local skips as PASS.
+- **PostgreSQL evidence:** CI run 41778661471 at code commit 8259e49: PostgreSQL 18.6; `python -m pytest -v` 57 passed, 0 skipped, 6 subtests passed; kit PASS.
 - **Risk:** no auth; isolated synthetic demo only; no deployment, real data, integrations, or held KPIs.
-- **Next:** inspect PostgreSQL CI evidence and independent/human review before merge.
+- **Next:** PR #13 independent/human review before merge; no merge/deploy performed.
