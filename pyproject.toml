@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=80"]
+build-backend = "setuptools.build_meta"
+
+[project]
+# PROPOSED packaging baseline (ADR-001 §16 leaves the tool unlocked):
+# exact pins of direct dependencies inside pyproject.toml; no separate
+# requirements files. A proper lockfile can be adopted by a later decision.
+name = "fwi-backend"
+description = "FoodWaste Intelligence (FWI) backend - synthetic-data prototype"
+requires-python = ">=3.14,<3.15"
+dynamic = ["version"]
+dependencies = [
+    "fastapi==0.146.0",
+    "uvicorn==0.54.0",
+    "SQLAlchemy==2.1.8",
+    "psycopg[binary]==3.3.7",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.2.0",
+    "httpx==0.28.1",
+]
+
+[tool.setuptools.dynamic]
+version = { attr = "fwi.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
