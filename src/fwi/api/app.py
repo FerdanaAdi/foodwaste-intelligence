@@ -10,7 +10,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 
 from fwi import __version__
-from fwi.api.routes import health
+from fwi.api.routes import demo, health
 from fwi.infrastructure.database.session import (
     create_session_factory,
     database_url_from_environment,
@@ -34,6 +34,7 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(health.router)
+    app.include_router(demo.router)
     return app
 
 
