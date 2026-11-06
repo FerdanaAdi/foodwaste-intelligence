@@ -10,12 +10,12 @@ PR #15 stays Draft; no merge, deployment, methodology or application change is a
   `retries: 0`, no automatic POST retries. `route.fetch` explicitly uses maxRetries=0
   and maxRedirects=0. Schema isolation is per test, not merely per worker.
 - PostgreSQL 18 service: fwi_test/fwi_demo_test only. Historical browser CI used
-  trust authentication and wide port publishing. Proposed hardening replaces it with
+  trust authentication and wide port publishing. Verified hardening replaces it with
   synthetic-only password authentication, restricts publishing to `127.0.0.1:5432`,
   masks the browser job test URL's password in subsequent runner logs, and tests that
   an intentionally incorrect password is rejected. A fixture literal is present in
   the workflow source; it is public/nonsecret and must never be reused outside CI.
-  This change is **NOT VERIFIED** until the new HEAD completes all three jobs.
+  Hardened CI is verified at `ccfc192` in run 42237668373 (details below).
   No Windows PostgreSQL configuration or development database is accessed.
 - CI-only Python harness refuses non-Linux/non-Actions execution. It reuses
   verify_test_target/drop_created_schema from repository tests. A random UUID4
@@ -62,7 +62,7 @@ retention. Only synthetic fixture content is included. No database credentials o
 connection URLs are attached. `frontend/browser-evidence/cleanup.json` records the
 final no-leftovers check. Failure screenshot/trace files exist only when a test fails.
 
-## Final security closure — pending new CI evidence
+## Final security closure — verified hardened CI, independent sign-off pending
 
 - MEDIUM: the historical passing browser job used `POSTGRES_HOST_AUTH_METHOD: trust`
   and `5432:5432`. The runner was ephemeral and the database synthetic, but neither
@@ -84,10 +84,22 @@ final no-leftovers check. Failure screenshot/trace files exist only when a test 
   commit identity, all tests, retries/workers and original source config remain unchanged.
   New artifacts must pass a URL/fixture scan, including decoded JSON attachments and
   embedded HTML report data; CI SUCCESS alone is insufficient for this check.
-- These CI-level changes must pass **new-head** Chromium W-20–W-25, frontend and
-  backend CI, password probe, and exact OID/owner-guarded cleanup. Prior browser
-  PASS does not prove the hardened environment. If port syntax is rejected by
-  the hosted runner, investigate safely; never silently restore `trust`.
+- **New-head evidence:** [Actions 42237668373](https://github.com/FerdanaAdi/foodwaste-intelligence/actions/runs/42237668373)
+  at `ccfc192c38892a4237378ba4e6e77d4044c9ead7`: all three jobs SUCCESS.
+  [Artifact 13512937253](https://github.com/FerdanaAdi/foodwaste-intelligence/actions/runs/42237668373/artifacts/13512937253),
+  `chromium-integrity-42237668373-1`, retains reports/identity/rows/audits/cleanup seven days.
+  This is new hardened-environment proof, not reuse of the historical PASS.
+- **MEDIUM technical closure:** actual container command publishes
+  `-p 127.0.0.1:5432:5432`; correct TCP password succeeds for fwi_test/fwi_demo_test
+  on PostgreSQL 18 with `used_password=true`; incorrect password is rejected with
+  password-authentication failure. No public fixture literal appears after masking.
+- **LOW technical closure:** W-20–W-25 6/6 PASS, zero retries/skips/flaky, one worker;
+  six exact owned schemas absent. Artifact inspection (31 buffers including decoded
+  JSON attachments and embedded HTML report data) found no database URL or password
+  fixture markers. Git diff capture is absent; commit/run identity remains available.
+  W-20/W-21 each forwards one POST/201 and proves one committed row + creation audit
+  before browser 503. UNKNOWN + refresh leaves full data/audit hashes unchanged.
+  Final counts are respectively event/measurement/audit = 1/0/3 and 1/1/4 (two seed audits).
 - LOW evidence: on prior HEAD `079f78cb03ef67b273fc3a879906024abef14d51`,
   [Actions run 42221023864](https://github.com/FerdanaAdi/foodwaste-intelligence/actions/runs/42221023864)
   SUCCESS (three jobs), W-20–W-25 6/6 on Linux Chromium, retries=0/workers=1.
@@ -103,6 +115,7 @@ final no-leftovers check. Failure screenshot/trace files exist only when a test 
 
 ## Verification status and residual review
 
+The following is the earlier pre-hardening evidence; current security proof is above.
 **Linux Chromium Browser E2E PASS**, verified on 2026-11-06 in
 [Actions run 42220461409](https://github.com/FerdanaAdi/foodwaste-intelligence/actions/runs/42220461409)
 for PR head `c8c0df0ede3c092c345db3d5d92530a9d948f381` (Actions tests the PR merge ref).
