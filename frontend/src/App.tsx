@@ -9,6 +9,7 @@ import EventDetailPage from "./pages/EventDetailPage";
 import QuickCapturePage from "./pages/QuickCapturePage";
 import ReviewAuditPage from "./pages/ReviewAuditPage";
 import ExportPreviewPage from "./pages/ExportPreviewPage";
+import BackendEventDetailPage from "./pages/BackendEventDetailPage";
 
 export default function App() {
   const store = useMemo(() => createDemoStore(), []);
@@ -16,6 +17,8 @@ export default function App() {
     <DemoStoreContext.Provider value={store}>
       <Routes>
         <Route element={<AppLayout />}>
+          <Route path="/backend-demo" element={<BackendEventDetailPage />} />
+          <Route path="/backend-demo/events/:eventId" element={<BackendEventDetailPage />} />
           <Route path="/" element={<DashboardPage />} />
           <Route path="/events" element={<EventLedgerPage />} />
           <Route path="/events/:eventId" element={<EventDetailPage />} />

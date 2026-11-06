@@ -8,10 +8,12 @@ const NAV_ITEMS = [
   { to: "/capture", label: "Capture Cepat" },
   { to: "/review", label: "Pratinjau Review & Audit" },
   { to: "/export", label: "Pratinjau Ekspor CSV" },
+  { to: "/backend-demo", label: "Detail Backend (read-only)" },
 ];
 
 export default function AppLayout() {
   const location = useLocation();
+  const backendMode = location.pathname.startsWith("/backend-demo");
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
       <a
@@ -40,7 +42,7 @@ export default function AppLayout() {
               disabled
               className="hidden cursor-not-allowed rounded border border-slate-200 px-2 py-1 text-xs text-slate-400 sm:block"
             >
-              Backend belum terhubung
+              {backendMode ? "Sumber: API backend (read-only)" : "Sumber: DemoStore in-memory"}
             </button>
           </div>
           <nav aria-label="Navigasi utama" className="overflow-x-auto">
@@ -76,8 +78,9 @@ export default function AppLayout() {
 
       <footer className="mx-auto max-w-6xl px-4 pb-8 text-xs leading-relaxed text-slate-500 sm:px-6">
         <p>
-          Data demo bersifat sementara di memori browser dan direset saat halaman dimuat ulang.
-          Belum ada backend, PostgreSQL, autentikasi, maupun penyimpanan evidence yang terhubung.
+          {backendMode ? "Halaman ini membaca API FastAPI/PostgreSQL lokal. Kegagalan API tidak diganti data in-memory."
+            : "Sumber DemoStore in-memory: data sementara di browser, direset saat reload; tidak disimpan ke backend."}
+          {" "}Demo sintetis terisolasi; autentikasi dan penyimpanan evidence belum tersedia.
         </p>
         <p>
           KPI {HELD_KPIS.join(", ")} berstatus HELD dan tidak dihitung di UI ini. Bukan sistem
