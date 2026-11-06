@@ -88,4 +88,13 @@ describe("FWI-INT-005 write boundary client", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({ ...fixture.measurement, ...body, gross: "4E-1", net: "0.3", measured_at: "2026-11-06T04:02:00Z" })));
     expect((await createBackendMeasurement(fixture.event.event_id, body)).kind).toBe("saved");
   });
+  it.each([
+    ["2026-11-06T12:00:00.123456+08:00", "2026-11-06T04:00:00.123456Z", "saved"],
+    ["2026-11-06T12:00:00.123456+08:00", "2026-11-06T04:00:00.123457Z", "unknown"],
+    ["2026-11-06T12:00:00.1234+08:00", "2026-11-06T04:00:00.123400Z", "saved"],
+  ])("sameInstant preserves fractional-second comparison: %s / %s", async (occurred_at, returnedTime, kind) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({ ...fixture.event, occurred_at: returnedTime })));
+    expect((await createBackendEvent({ ...event, occurred_at })).kind).toBe(kind);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
 });

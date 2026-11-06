@@ -6,9 +6,9 @@
 - **Wire:** exact decimal strings/null, five distinct demo statuses, six unchanged provisional bases, explicit timestamps/method/provenance.
 - **Frontend verification:** typecheck/build PASS; 98 Vitest PASS; real loopback proxy test PASS.
 - **Backend verification:** required real PostgreSQL, 73 PASS + 6 subtests, 0 skipped; 14 PostgreSQL cases; kit PASS.
-- **W-20/21:** automated UI/client locks and real PostgreSQL post-commit lost-ack tests PASS; browser NOT RUN.
-- **Browser gate:** BLOCKED by Computer Use URL-confidence policy on opening test tab; no alternate driver attempted.
-- **Cleanup/preservation:** exact guarded test schema removed; services stopped; dev snapshots unchanged; GOV hash and QA worktree preserved.
+- **Final targeted verification:** typecheck PASS; 13 write-client tests PASS, including three microsecond/offset cases; production code unchanged.
+- **Browser gate:** official updated Computer Use again BLOCKED on capture reload; W-20–25 browser NOT RUN; no alternative driver.
+- **Latest cleanup:** schema fwi_demo_test_77e07a5eee6d41738cb9f49068d20054 absent; services stopped; no browser event/measurement writes, no dev DB access; GOV/QA preserved.
 - **Sources:** repo domain/ADRs only; original FWI-01/02/03/04 unavailable; no scientific vocabulary/rounding/reconciliation changes.
 - **Risks:** no exactly-once/auth; journal is per browser session; manual unlock requires independent reconciliation; held KPIs remain disabled.
-- **Next / review:** independent code review PENDING; resume Chrome W-20–25 on fresh guarded schema when browser access permits. No merge/deploy.
+- **Review / next:** Antigravity APPROVE WITH CONDITIONS per Owner for aa2d33c (no published GitHub review); reporting corrections in docs/frontend/fwi-int-005-review-reconciliation.md; browser gate still prevents merge readiness.

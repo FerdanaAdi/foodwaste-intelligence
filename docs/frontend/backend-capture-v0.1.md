@@ -1,7 +1,11 @@
 # FWI-INT-005 — Synthetic persistent backend capture
 
 Implementation applied and verified on a feature branch; **REVIEW REQUIRED / browser E2E BLOCKED**.
-Independent code review: **PENDING**. This document does not authorize merge/deployment.
+Independent code review: **Antigravity APPROVE WITH CONDITIONS, as reported by Owner for aa2d33c**.
+No published GitHub review record was returned during verification. See
+[review reconciliation](fwi-int-005-review-reconciliation.md) for corrected mass bases,
+D-01–D-06 mapping, microsecond evidence and the latest browser gate. This document
+does not authorize merge/deployment or claim full FWI-03/FWI-04 validation.
 
 Scope: isolated `/backend-demo/capture`, separate from QuickCapture and DemoStore. Based on merged main `8f64e62243076693c2c15e477fc531f8b5ed946f`, D-01–D-06 and W-20–W-25 Owner approval. No production authorization, authentication, government access, schema or methodology change. Original FWI-03/FWI-04 texts were not directly reviewed in the code sandbox.
 
