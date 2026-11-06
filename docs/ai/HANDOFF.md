@@ -1,13 +1,14 @@
-# FWI AI Handoff (update after each completed task; keep <=15 lines)
-- **Task / branch:** FWI-DATA-001 / `feat/fwi-data-001-demo-persistence`.
-- **Owner:** Codex implementer; owner approved five entities for synthetic Demo v0.1 only.
-- **Base:** origin/main `abed85e`; PR #12 verified MERGED. Untracked GOV task preserved.
-- **Scope:** five demo tables, Alembic demo_0001, event/measurement create/read, atomic creation audit, seed and tests.
-- **Decisions:** UUID, unscaled NUMERIC, kg-only, provisional vocabulary/routes; no rounding/reconciliation policy invented.
-- **Sources:** ADR-001/002 and repo contract read; original FWI-02/03/04 unavailable locally.
-- **Tests (controlled verification):** targeted guard + backend regression pytest: 59 passed, 0 failed, 0 skipped; 6 subtests passed.
-- **PostgreSQL evidence:** CI run 41778661471 at code commit 8259e49: PostgreSQL 18.6; `python -m pytest -v` 57 passed, 0 skipped, 6 subtests passed; kit PASS.
-- **Risk:** no auth; isolated synthetic demo only; no deployment, real data, integrations, or held KPIs.
-- **Guard:** exact fwi_test/fwi_demo_test/PG18 required before schema DDL; UUID4 prefix and created OID/ownership checked on cleanup; CI identity aligned.
-- **Local blocker:** host psql read-only SELECT with both roles: no password supplied (127.0.0.1 and localhost); no migration, schema create/drop or local persistence tests executed.
-- **Next:** owner configures private pgpass for host execution; verify identity/objects/revision, then authorized dev upgrade + isolated test schemas. PR #13 remains unmerged.
+# FWI AI Handoff
+- **Task / branch:** FWI-INT-003 / `codex/fwi-int-003-read-only-detail`; base main `98bbbbd` (PR #13 merged).
+- **Scope:** isolated `/backend-demo/events/:eventId` reader; two existing GETs, independent DTO/parser, no DemoStore fallback.
+- **Contract:** UUID, exact decimal strings/null, five statuses, six unchanged provisional bases, provenance and aware timestamps.
+- **UI:** loading/retry, invalid UUID, 404/503/network/timeout/malformed/partial/stale handling; explicit source; no snapshot claim.
+- **Transport:** fixed loopback GET-only development proxy; no new dependencies, schema, migration, domain behavior or development DB writes.
+- **Fixtures:** shared synthetic wire JSON; existing guarded test schema + APIs create one event with five measurements.
+- **Local tests:** 78 Vitest PASS; proxy HTTP PASS; typecheck/build PASS; backend 71 PASS + 6 subtests; 12 PostgreSQL tests; kit PASS.
+- **Read-only evidence:** repeated GETs leave all rows of all five business tables, including audit, unchanged.
+- **Prior local DB evidence:** both roles authenticated on PG18.6; dev demo_0001 applied in prior task; no new migration this task.
+- **Sources:** accepted ADRs/repo domain contract; original FWI-02/03/04 and source desk-scenario IDs unavailable locally.
+- **Risks:** no auth; demo-only vocabulary; two non-atomic GETs; existing deprecation warnings; no full browser-to-DB smoke claim.
+- **Review:** Antigravity should inspect source isolation, parser, proxy, stale/partial handling and read-only test; see docs/frontend/backend-detail-v0.1.md.
+- **Preserved:** untracked GOV task and frontend QA worktree; OP-08/FI-02/NI-03 HELD; no merge/deploy.

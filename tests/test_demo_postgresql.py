@@ -5,6 +5,7 @@ No SQLite substitute. No production database is authorized for this test.
 """
 
 import os
+import json
 from pathlib import Path
 from unittest.mock import patch
 from uuid import UUID, uuid4
@@ -27,6 +28,45 @@ from fwi.infrastructure.database.demo_seed import ORGANIZATION_ID, SITE_ID, seed
 from fwi.infrastructure.database.models import AuditEvent, Base, Measurement, WasteEvent
 from fwi.infrastructure.database.session import create_engine_for_url, create_session_factory
 from test_demo_validation import measurement_payload
+
+
+def test_read_only_frontend_contract_fixture_leaves_all_data_and_audit_unchanged(database):
+    """Shared synthetic wire example, real API/NUMERIC, no development DB writes."""
+    fixture = json.loads((Path(__file__).resolve().parents[1] /
+                          'frontend/tests/fixtures/backend-detail.json').read_text())
+    app = create_app()
+    def snapshot_all():
+        with database() as session:
+            return {table.name: list(session.execute(select(table).order_by(*table.primary_key.columns)).mappings())
+                    for table in Base.metadata.sorted_tables}
+    try:
+        with TestClient(app) as client:
+            event_input = {k: fixture['event'][k] for k in ('organization_id', 'site_id', 'event_type', 'occurred_at')}
+            event = client.post('/demo/v0.1/events', json=event_input)
+            assert event.status_code == 201
+            event_id = event.json()['event_id']
+            for status in ('observed', 'estimated', 'missing', 'measured_zero', 'not_measured'):
+                payload = {k: v for k, v in fixture['measurement'].items() if k not in ('measurement_id', 'event_id', 'recorded_at')}
+                payload['observation_status'] = status
+                if status in ('missing', 'not_measured'):
+                    payload.update(gross=None, tare=None, net=None)
+                elif status == 'measured_zero':
+                    payload.update(gross='0.4', tare='0.4', net='0')
+                assert client.post(f'/demo/v0.1/events/{event_id}/measurements', json=payload).status_code == 201
+            before = snapshot_all()
+            for _ in range(2):
+                assert client.get(f'/demo/v0.1/events/{event_id}').json()['event_id'] == event_id
+                records = client.get(f'/demo/v0.1/events/{event_id}/measurements').json()
+                assert len(records) == len({r['measurement_id'] for r in records}) == 5
+                assert {r['event_id'] for r in records} == {event_id}
+                assert records[0]['net'] == fixture['measurement']['net']
+                assert records[2]['net'] is None
+                assert records[3]['net'] == '0'
+                assert {r['observation_status'] for r in records} == {'observed', 'estimated', 'missing', 'measured_zero', 'not_measured'}
+                assert all(r['provenance'] == fixture['measurement']['provenance'] and r['mass_basis'] == 'as_served' for r in records)
+            assert snapshot_all() == before
+    finally:
+        app.state.session_factory.kw['bind'].dispose()
 
 
 def verify_test_target(connection, schema):
