@@ -9,8 +9,13 @@ PR #15 stays Draft; no merge, deployment, methodology or application change is a
 - One `chromium-browser-integrity` job and one Chromium project, `workers: 1`,
   `retries: 0`, no automatic POST retries. `route.fetch` explicitly uses maxRetries=0
   and maxRedirects=0. Schema isolation is per test, not merely per worker.
-- PostgreSQL 18 service: fwi_test/fwi_demo_test only. The disposable CI service uses
-  trust authentication on the isolated runner, so no password is needed or recorded.
+- PostgreSQL 18 service: fwi_test/fwi_demo_test only. Historical browser CI used
+  trust authentication and wide port publishing. Proposed hardening replaces it with
+  synthetic-only password authentication, restricts publishing to `127.0.0.1:5432`,
+  masks the browser job test URL's password in subsequent runner logs, and tests that
+  an intentionally incorrect password is rejected. A fixture literal is present in
+  the workflow source; it is public/nonsecret and must never be reused outside CI.
+  This change is **NOT VERIFIED** until the new HEAD completes all three jobs.
   No Windows PostgreSQL configuration or development database is accessed.
 - CI-only Python harness refuses non-Linux/non-Actions execution. It reuses
   verify_test_target/drop_created_schema from repository tests. A random UUID4
@@ -56,6 +61,39 @@ guarded cleanup results, and failure-only screenshots/retained traces with 7-day
 retention. Only synthetic fixture content is included. No database credentials or
 connection URLs are attached. `frontend/browser-evidence/cleanup.json` records the
 final no-leftovers check. Failure screenshot/trace files exist only when a test fails.
+
+## Final security closure — pending new CI evidence
+
+- MEDIUM: the historical passing browser job used `POSTGRES_HOST_AUTH_METHOD: trust`
+  and `5432:5432`. The runner was ephemeral and the database synthetic, but neither
+  fact alone establishes that unauthenticated network access was acceptable.
+- This patch changes browser CI only: `POSTGRES_PASSWORD` with a public synthetic CI
+  fixture, loopback host port binding `127.0.0.1:5432:5432`, masked database URL set
+  through `GITHUB_ENV`, and an explicit correct/incorrect password probe over TCP.
+  The positive probe also requires libpq `used_password=true`. The negative probe
+  accepts only SQLSTATE 28P01 or the exact role's password-authentication failure;
+  generic connection/network failures cannot pass. This corrects the supplied patch's
+  narrower InvalidPassword handler: psycopg startup failures can be OperationalError.
+  Source-visible synthetic fixtures are **not** production secrets; the mask reduces
+  incidental propagation in step logs, not exposure of the repository YAML itself.
+  Service initialization precedes masking steps; its public CI fixture can appear in
+  startup logs. No private/local credentials are read or used by this job.
+- These CI-level changes must pass **new-head** Chromium W-20–W-25, frontend and
+  backend CI, password probe, and exact OID/owner-guarded cleanup. Prior browser
+  PASS does not prove the hardened environment. If port syntax is rejected by
+  the hosted runner, investigate safely; never silently restore `trust`.
+- LOW evidence: on prior HEAD `079f78cb03ef67b273fc3a879906024abef14d51`,
+  [Actions run 42221023864](https://github.com/FerdanaAdi/foodwaste-intelligence/actions/runs/42221023864)
+  SUCCESS (three jobs), W-20–W-25 6/6 on Linux Chromium, retries=0/workers=1.
+  [Artifact 13502784462](https://github.com/FerdanaAdi/foodwaste-intelligence/actions/runs/42221023864/artifacts/13502784462)
+  contains PostgreSQL identity, rows/audits, POST counts and cleanup evidence.
+  Windows Chrome writer remains NOT RUN; no claim of Windows parity.
+- LOW cleanup: six owned UUID4 schemas were checked absent, with
+  `remaining_owned_schemas=[]` and `cleanup_verified=true` on that prior run.
+  Abrupt termination and loss of ownership manifest are **residual risks**;
+  neither has exhaustive failure-injection evidence.
+- Independent Antigravity security/CI delta sign-off **PENDING**. PR #15 remains
+  DRAFT; no merge or deployment authorization.
 
 ## Verification status and residual review
 
