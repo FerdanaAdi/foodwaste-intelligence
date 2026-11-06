@@ -9,11 +9,13 @@ const NAV_ITEMS = [
   { to: "/review", label: "Pratinjau Review & Audit" },
   { to: "/export", label: "Pratinjau Ekspor CSV" },
   { to: "/backend-demo", label: "Detail Backend (read-only)" },
+  { to: "/backend-demo/capture", label: "Capture Backend (sintetis)" },
 ];
 
 export default function AppLayout() {
   const location = useLocation();
   const backendMode = location.pathname.startsWith("/backend-demo");
+  const backendCapture = location.pathname.startsWith("/backend-demo/capture");
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
       <a
@@ -42,7 +44,7 @@ export default function AppLayout() {
               disabled
               className="hidden cursor-not-allowed rounded border border-slate-200 px-2 py-1 text-xs text-slate-400 sm:block"
             >
-              {backendMode ? "Sumber: API backend (read-only)" : "Sumber: DemoStore in-memory"}
+              {backendCapture ? "Sumber: API backend sintetis (write demo)" : backendMode ? "Sumber: API backend (read-only)" : "Sumber: DemoStore in-memory"}
             </button>
           </div>
           <nav aria-label="Navigasi utama" className="overflow-x-auto">
@@ -78,7 +80,8 @@ export default function AppLayout() {
 
       <footer className="mx-auto max-w-6xl px-4 pb-8 text-xs leading-relaxed text-slate-500 sm:px-6">
         <p>
-          {backendMode ? "Halaman ini membaca API FastAPI/PostgreSQL lokal. Kegagalan API tidak diganti data in-memory."
+          {backendCapture ? "Capture melalui API FastAPI/PostgreSQL sintetis lokal. Tidak ada fallback ke DemoStore."
+            : backendMode ? "Halaman ini membaca API FastAPI/PostgreSQL lokal. Kegagalan API tidak diganti data in-memory."
             : "Sumber DemoStore in-memory: data sementara di browser, direset saat reload; tidak disimpan ke backend."}
           {" "}Demo sintetis terisolasi; autentikasi dan penyimpanan evidence belum tersedia.
         </p>

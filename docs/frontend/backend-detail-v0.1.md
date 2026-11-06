@@ -14,9 +14,10 @@ Direct links use `/backend-demo/events/<uuid>` and survive page refresh.
 An empty migrated database has no event to read: no seed runs at startup.
 Do not write development fixtures without separate target confirmation and owner approval.
 
-The development proxy binds loopback and forwards only GET event/detail-history
-paths to fixed `http://127.0.0.1:8000`. Non-GET is rejected before forwarding;
-cookie/authorization headers are removed. This is a development convenience,
+The development proxy binds loopback at fixed `http://127.0.0.1:8000`.
+FWI-INT-005 extends its scoped allowlist with event/measurement POSTs for the separate
+capture page (see `backend-capture-v0.1.md`); this detail page still issues GET only.
+Other methods/paths are rejected and credential headers are removed. This is a development convenience,
 not backend access control. Vite preview/production hosting is not configured as
 an API proxy; a production build is not deployment authorization.
 

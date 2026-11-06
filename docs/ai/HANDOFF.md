@@ -1,14 +1,14 @@
 # FWI AI Handoff
-- **Task / branch:** FWI-INT-003 / `codex/fwi-int-003-read-only-detail`; base main `98bbbbd` (PR #13 merged).
-- **Scope:** isolated `/backend-demo/events/:eventId` reader; two existing GETs, independent DTO/parser, no DemoStore fallback.
-- **Contract:** UUID, exact decimal strings/null, five statuses, six unchanged provisional bases, provenance and aware timestamps.
-- **UI:** loading/retry, invalid UUID, 404/503/network/timeout/malformed/partial/stale handling; explicit source; no snapshot claim.
-- **Transport:** fixed loopback GET-only development proxy; no new dependencies, schema, migration, domain behavior or development DB writes.
-- **Fixtures:** shared synthetic wire JSON; existing guarded test schema + APIs create one event with five measurements.
-- **Local tests:** 78 Vitest PASS; proxy HTTP PASS; typecheck/build PASS; backend 71 PASS + 6 subtests; 12 PostgreSQL tests; kit PASS.
-- **Read-only evidence:** repeated GETs leave all rows of all five business tables, including audit, unchanged.
-- **Prior local DB evidence:** both roles authenticated on PG18.6; dev demo_0001 applied in prior task; no new migration this task.
-- **Sources:** accepted ADRs/repo domain contract; original FWI-02/03/04 and source desk-scenario IDs unavailable locally.
-- **Risks:** no auth; demo-only vocabulary; two non-atomic GETs; existing deprecation warnings; no full browser-to-DB smoke claim.
-- **Review:** Antigravity should inspect source isolation, parser, proxy, stale/partial handling and read-only test; see docs/frontend/backend-detail-v0.1.md.
-- **Preserved:** untracked GOV task and frontend QA worktree; OP-08/FI-02/NI-03 HELD; no merge/deploy.
+- **Task / branch:** FWI-INT-005 / `codex/fwi-int-005-persistent-capture`; base main `8f64e62`.
+- **Approval:** Owner D-01–D-06 and W-20–W-25; supplied ZIP inspected against actual repository before applying.
+- **Scope:** isolated backend capture; two existing POSTs; immutable server event identity; no DemoStore mapping/fallback.
+- **Fixes:** journal storage fails closed; route context reset; response/input association; Vite CORS disabled to enforce OPTIONS denial.
+- **Wire:** exact decimal strings/null, five distinct demo statuses, six unchanged provisional bases, explicit timestamps/method/provenance.
+- **Frontend verification:** typecheck/build PASS; 98 Vitest PASS; real loopback proxy test PASS.
+- **Backend verification:** required real PostgreSQL, 73 PASS + 6 subtests, 0 skipped; 14 PostgreSQL cases; kit PASS.
+- **W-20/21:** automated UI/client locks and real PostgreSQL post-commit lost-ack tests PASS; browser NOT RUN.
+- **Browser gate:** BLOCKED by Computer Use URL-confidence policy on opening test tab; no alternate driver attempted.
+- **Cleanup/preservation:** exact guarded test schema removed; services stopped; dev snapshots unchanged; GOV hash and QA worktree preserved.
+- **Sources:** repo domain/ADRs only; original FWI-01/02/03/04 unavailable; no scientific vocabulary/rounding/reconciliation changes.
+- **Risks:** no exactly-once/auth; journal is per browser session; manual unlock requires independent reconciliation; held KPIs remain disabled.
+- **Next / review:** independent code review PENDING; resume Chrome W-20–25 on fresh guarded schema when browser access permits. No merge/deploy.

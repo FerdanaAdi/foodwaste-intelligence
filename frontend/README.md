@@ -24,10 +24,14 @@ npm run preview    # serve hasil build produksi
 
 ## Batas data (penting)
 
-- Semua data adalah **fixture sintetis fiktif** di `src/data/demoStore.ts`
+- Mode DemoStore menggunakan **fixture sintetis fiktif** di `src/data/demoStore.ts`
   (2 site, 3 event, 1 event dengan 2 pengukuran, 1 event tanpa pengukuran).
-- Tulisan demo bersifat **in-memory** dan **reset saat reload** — tidak ada
-  backend, PostgreSQL, autentikasi, maupun evidence storage yang terhubung.
+- Mode DemoStore bersifat **in-memory** dan **reset saat reload**.
+- `/backend-demo` membaca API lokal; `/backend-demo/capture` menulis data sintetis
+  melalui dua POST yang dibatasi proxy. Mode ini terpisah dari DemoStore dan
+  memerlukan backend/database uji yang sudah diverifikasi. Lihat
+  [kontrak capture](../docs/frontend/backend-capture-v0.1.md) untuk UNKNOWN/refresh,
+  batas pengujian dan gate browser. Autentikasi/evidence storage belum tersedia.
 - Aplikasi menampilkan banner `SYNTHETIC / DEMO — NOT OFFICIAL BGN SYSTEM`.
 - KPI `OP-08`, `FI-02`, `NI-03` HELD — tidak dihitung/ditampilkan.
 - Tidak ada agregasi lintas mass basis; `missing` ≠ `measured_zero`;
