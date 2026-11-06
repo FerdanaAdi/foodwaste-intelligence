@@ -78,6 +78,12 @@ final no-leftovers check. Failure screenshot/trace files exist only when a test 
   incidental propagation in step logs, not exposure of the repository YAML itself.
   Service initialization precedes masking steps; its public CI fixture can appear in
   startup logs. No private/local credentials are read or used by this job.
+  Artifact inspection of run 42236059148 found Playwright's default `metadata.gitDiff`
+  copied workflow source, including the public fixture DSN, into the JSON report.
+  The browser step now uses a temporary config wrapper with `captureGitInfo.diff=false`;
+  commit identity, all tests, retries/workers and original source config remain unchanged.
+  New artifacts must pass a URL/fixture scan, including decoded JSON attachments and
+  embedded HTML report data; CI SUCCESS alone is insufficient for this check.
 - These CI-level changes must pass **new-head** Chromium W-20–W-25, frontend and
   backend CI, password probe, and exact OID/owner-guarded cleanup. Prior browser
   PASS does not prove the hardened environment. If port syntax is rejected by

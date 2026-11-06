@@ -122,7 +122,16 @@ jobs:
       - run: npx playwright install --with-deps chromium
         working-directory: frontend
       - name: Linux Chromium Browser E2E (no retries, one worker)
-        run: npm run test:e2e:ci
+        run: |
+          # Keep workflow DSNs/public password fixtures out of report gitDiff metadata.
+          # The wrapper is CI-temporary; the repository Playwright config is unchanged.
+          node --input-type=module <<'JS'
+          import { writeFileSync } from 'node:fs';
+          writeFileSync('.playwright-ci-security.config.mjs',
+            "import config from './playwright.config.mjs';\n" +
+            "export default { ...config, captureGitInfo: { commit: true, diff: false } };\n");
+          JS
+          npm run test:e2e:ci -- --config=.playwright-ci-security.config.mjs
         working-directory: frontend
       - name: Always clean and verify exact owned schemas
         if: always()
