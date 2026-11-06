@@ -2,6 +2,9 @@
 
 Implementation applied and verified on a feature branch; **REVIEW REQUIRED / browser E2E BLOCKED**.
 Independent code review: **Antigravity APPROVE WITH CONDITIONS, as reported by Owner for aa2d33c**.
+The Owner-authorized [Linux Chromium CI gate](ci-browser-integrity.md) separately
+tests browser integrity with no retries and guarded per-test PostgreSQL schemas.
+Its actual CI result does not establish Windows Chrome writer verification.
 No published GitHub review record was returned during verification. See
 [review reconciliation](fwi-int-005-review-reconciliation.md) for corrected mass bases,
 D-01–D-06 mapping, microsecond evidence and the latest browser gate. This document

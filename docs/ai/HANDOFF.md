@@ -7,8 +7,9 @@
 - **Frontend verification:** typecheck/build PASS; 98 Vitest PASS; real loopback proxy test PASS.
 - **Backend verification:** required real PostgreSQL, 73 PASS + 6 subtests, 0 skipped; 14 PostgreSQL cases; kit PASS.
 - **Final targeted verification:** typecheck PASS; 13 write-client tests PASS, including three microsecond/offset cases; production code unchanged.
-- **Browser gate:** official updated Computer Use again BLOCKED on capture reload; W-20–25 browser NOT RUN; no alternative driver.
+- **Browser gate:** Windows Computer Use remains BLOCKED; Owner now separately authorizes Linux Chromium GitHub Actions (not a local bypass); actual CI result required.
 - **Latest cleanup:** schema fwi_demo_test_77e07a5eee6d41738cb9f49068d20054 absent; services stopped; no browser event/measurement writes, no dev DB access; GOV/QA preserved.
 - **Sources:** repo domain/ADRs only; original FWI-01/02/03/04 unavailable; no scientific vocabulary/rounding/reconciliation changes.
 - **Risks:** no exactly-once/auth; journal is per browser session; manual unlock requires independent reconciliation; held KPIs remain disabled.
-- **Review / next:** Antigravity APPROVE WITH CONDITIONS per Owner for aa2d33c (no published GitHub review); reporting corrections in docs/frontend/fwi-int-005-review-reconciliation.md; browser gate still prevents merge readiness.
+- **CI delta:** one Chromium job, workers=1/retries=0, per-test guarded schema/OID manifests, real post-commit W-20/21 interception, always cleanup/artifacts (7 days); see docs/frontend/ci-browser-integrity.md.
+- **Review / next:** Antigravity approval conditional per Owner for aa2d33c; new CI/harness delta review PENDING; PR #15 stays Draft pending evidence approval. Existing npm audit advisories need separate follow-up.
