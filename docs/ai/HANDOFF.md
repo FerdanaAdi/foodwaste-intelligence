@@ -1,15 +1,10 @@
 # FWI AI Handoff
-- **Task / branch:** FWI-INT-005 / `codex/fwi-int-005-persistent-capture`; base main `8f64e62`.
-- **Approval:** Owner D-01–D-06 and W-20–W-25; supplied ZIP inspected against actual repository before applying.
-- **Scope:** isolated backend capture; two existing POSTs; immutable server event identity; no DemoStore mapping/fallback.
-- **Fixes:** journal storage fails closed; route context reset; response/input association; Vite CORS disabled to enforce OPTIONS denial.
-- **Wire:** exact decimal strings/null, five distinct demo statuses, six unchanged provisional bases, explicit timestamps/method/provenance.
-- **Frontend verification:** typecheck/build PASS; 98 Vitest PASS; real loopback proxy test PASS.
-- **Backend verification:** required real PostgreSQL, 73 PASS + 6 subtests, 0 skipped; 14 PostgreSQL cases; kit PASS.
-- **Final targeted verification:** typecheck PASS; 13 write-client tests PASS, including three microsecond/offset cases; production code unchanged.
-- **Browser gate:** Windows Computer Use remains BLOCKED; Owner now separately authorizes Linux Chromium GitHub Actions (not a local bypass); actual CI result required.
-- **Latest cleanup:** schema fwi_demo_test_77e07a5eee6d41738cb9f49068d20054 absent; services stopped; no browser event/measurement writes, no dev DB access; GOV/QA preserved.
-- **Sources:** repo domain/ADRs only; original FWI-01/02/03/04 unavailable; no scientific vocabulary/rounding/reconciliation changes.
-- **Risks:** no exactly-once/auth; journal is per browser session; manual unlock requires independent reconciliation; held KPIs remain disabled.
-- **CI delta:** one Chromium job, workers=1/retries=0, per-test guarded schema/OID manifests, real post-commit W-20/21 interception, always cleanup/artifacts (7 days); see docs/frontend/ci-browser-integrity.md.
-- **Review / next:** Antigravity approval conditional per Owner for aa2d33c; new CI/harness delta review PENDING; PR #15 stays Draft pending evidence approval. Existing npm audit advisories need separate follow-up.
+- **Task:** FWI-INT-005 / `codex/fwi-int-005-persistent-capture`, main base `8f64e62`; Owner D-01–D-06/W-20–W-25 and Linux CI addendum approved.
+- **Scope:** isolated capture, two existing POSTs, stable event UUID, exact Decimal/null, five statuses/six provisional bases; no DemoStore mapping, schema or methodology change.
+- **Implementation:** journal fails closed/no replay, route context reset, response/input association, scoped Vite boundary; final CI delta changes tests/config/docs only.
+- **Regression:** CI typecheck/build/proxy PASS, 101 Vitest PASS; required PostgreSQL 76 tests + six subtests PASS (14 PostgreSQL cases), no skips; kit PASS.
+- **Browser:** Linux Chromium Browser E2E PASS W-20–W-25 6/6, retries=0/workers=1; Actions 42220461409 at c8c0df0. Windows writer BLOCKED/NOT RUN; no bypass.
+- **Integrity/cleanup:** real 201 + row/audit before W-20/21 test-only 503; one POST/no replay; all six owned schemas absent; PostgreSQL 18.6 fwi_test/fwi_demo_test only, no dev writes; GOV/QA preserved.
+- **Evidence:** docs/frontend/ci-browser-integrity.md and fwi-int-005-review-reconciliation.md; always-upload artifacts retained seven days, failure screenshot/trace verified from initial selector failure.
+- **Limits:** original FWI-01/02/03/04 unavailable; no full methodology validation, exactly-once/auth or cross-client deduplication; OP-08/FI-02/NI-03 HELD; existing npm advisories need separate follow-up.
+- **Review/next:** Antigravity conditional approval reported by Owner for aa2d33c; new CI/harness delta independent review PENDING. PR #15 stays Draft for Owner evidence review; no merge/deploy.

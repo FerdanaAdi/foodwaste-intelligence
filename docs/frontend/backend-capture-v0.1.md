@@ -1,6 +1,6 @@
 # FWI-INT-005 — Synthetic persistent backend capture
 
-Implementation applied and verified on a feature branch; **REVIEW REQUIRED / browser E2E BLOCKED**.
+Implementation applied and verified on a feature branch; **REVIEW REQUIRED / Linux Chromium Browser E2E PASS**.
 Independent code review: **Antigravity APPROVE WITH CONDITIONS, as reported by Owner for aa2d33c**.
 The Owner-authorized [Linux Chromium CI gate](ci-browser-integrity.md) separately
 tests browser integrity with no retries and guarded per-test PostgreSQL schemas.
@@ -45,16 +45,20 @@ On Windows: `npm run typecheck` PASS; `npm test` 98 PASS; `npm run test:proxy` 1
 `python -m pytest -q` 73 PASS, 6 subtests PASS, 0 skipped, including 14 PostgreSQL cases;
 `python -I scripts/verify_kit.py` PASS. Existing deprecation warnings remain.
 
-| Acceptance | Automated evidence | Real browser write E2E |
-|---|---|---|
-| W-20 unknown event POST | Client/UI one-POST and refresh/remount lock; real PostgreSQL commit followed by test-only 503 | BLOCKED / NOT RUN |
-| W-21 unknown measurement POST | Known-event lock; real PostgreSQL commit followed by test-only 503 | BLOCKED / NOT RUN |
-| W-22 correction after 422 | UI retains event and resubmits measurement to same UUID only | BLOCKED / NOT RUN |
-| W-23 known UUID refresh | UI mount/deep-link reads only; no POST replay | BLOCKED / NOT RUN |
-| W-24 decimal/null/zero | Wire/parser/UI tests plus existing real PostgreSQL precision/status constraints | BLOCKED / NOT RUN |
-| W-25 write boundary | Real-loopback Vite allowlist, cross-origin/content-type rejection, methods and credential stripping | BLOCKED / NOT RUN |
+Latest Linux CI at `c8c0df0`: 101 Vitest, one proxy test, typecheck/build PASS;
+76 backend tests + six subtests PASS (14 PostgreSQL cases, no skips), kit PASS.
+See [CI evidence](ci-browser-integrity.md) for run/artifact IDs, database/audit proof and cleanup.
 
-The browser gate could initially read the current Chrome URL, but Computer Use then stopped
+| Acceptance | Automated evidence | Linux Chromium writer E2E |
+|---|---|---|
+| W-20 unknown event POST | Verified PostgreSQL commit + audit, then browser-only 503; one POST, UNKNOWN refresh lock | PASS |
+| W-21 unknown measurement POST | Same-event commit + audit before 503; no replay after refresh | PASS |
+| W-22 correction after 422 | UI retains event and resubmits corrected measurement to same UUID only | PASS |
+| W-23 known UUID refresh | Browser reload/detail reads preserve UUID, database hash and POST count | PASS |
+| W-24 decimal/null/zero | Five statuses on one event; exact database/rendered values, separate DemoStore | PASS |
+| W-25 write boundary | Browser request-context probes rejected before forwarding; no data/audit mutation | PASS |
+
+The prior Windows browser gate could initially read the current Chrome URL, but Computer Use then stopped
 on opening a test tab because it could not determine the Windows browser URL with enough
 confidence to enforce policy. No alternative browser automation was attempted. The previous
 004B reader PASS is not evidence for this new writer. A fresh guarded schema and services
@@ -63,9 +67,11 @@ was cleaned using the existing identity/OID/ownership guard; test listeners were
 Read-only snapshots of all five development business tables before/after matched (all empty).
 The original untracked GOV file hash and frontend QA worktree were preserved.
 
-## Browser resume plan
+## Optional Windows browser follow-up
 
-Once official browser access can identify and permit the Windows loopback URL, the implementer
+Windows writer testing remains NOT RUN/BLOCKED; the Owner-authorized Linux CI gate above
+has separate real-browser evidence and does not bypass that policy. If Windows-specific testing
+is requested once official access can identify and permit the Windows loopback URL, the implementer
 must create a fresh guarded test schema and run the writer through Chrome, including W-20/W-21
 test-only loss of acknowledgement after a real commit, refresh locks, W-22 correction, W-23
 GET-only reload, W-24 exact string/null/zero and W-25 boundary inspection. Compare database/audit
@@ -77,6 +83,7 @@ Cleanup only the exact owned test schema. Browser permission cannot be bypassed 
 
 Tests: `frontend/tests/backend-write.test.ts`, `frontend/tests/backend-capture.test.tsx`,
 `frontend/tests/backend-proxy.test.mjs`, plus `tests/test_demo_postgresql.py`. Run the
-commands above using existing dependencies. No new dependency installation is required.
+commands above using existing dependencies. Linux CI browser tests additionally use the
+pinned Playwright test dependency/lockfile and CI-only harness documented in the linked gate.
 
 Preexisting backend auth, correction/supersession, scientific precision and vocabulary, idempotency-key strategy, production security, real SPPG operations, FWI-03 reconciliation and held OP-08/FI-02/NI-03 remain **OPEN/HELD**.

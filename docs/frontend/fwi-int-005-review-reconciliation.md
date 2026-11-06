@@ -1,6 +1,9 @@
 # FWI-INT-005 — Final verification and review reconciliation
 
-Status: **PARTIAL — browser writer gate remains BLOCKED**.
+Status: **Linux Chromium writer verification PASS; independent review of the test/CI delta PENDING**.
+Windows writer verification remains BLOCKED / NOT RUN. The historical attempt below is retained.
+The separately Owner-authorized [CI browser gate](ci-browser-integrity.md) passed all six
+W-20–W-25 cases in Actions run 42220461409 at PR head `c8c0df0`; no local browser bypass occurred.
 Reviewed implementation HEAD: `aa2d33c8c3978c5b4385ec4e9e3f28bcc7314f2c`.
 Independent review: **Antigravity APPROVE WITH CONDITIONS, as reported by Owner**.
 GitHub PR #15 returned no published review/comment records during this verification;
@@ -66,7 +69,7 @@ all source desk scenarios, metrological validation, field validation, or product
 readiness. OP-08/FI-02/NI-03 remain HELD. Scientific vocabulary, precision/rounding,
 correction/reconciliation and idempotency remain outside this change.
 
-## 5. Actual final browser attempt
+## 5. Historical Windows browser attempt
 
 Official Windows Computer Use could initially identify Chrome and the loopback URL,
 open a test tab, and navigate to `/backend-demo/capture`. After starting the services,
@@ -105,8 +108,10 @@ Original GOV untracked file and frontend QA worktree were preserved.
 
 ## 7. Owner merge review gate
 
-PR #15 remains draft and is **not ready for Owner merge approval** while writer
-browser E2E is missing. Reconciled reporting errors do not substitute for that
-condition. Resume with officially permitted Chrome access and a fresh guarded test
-schema; perform the scoped writer and W-20/W-21 scenarios, inspect data/audit and
-network, then clean only that execution's schema. No new D/W approval is required.
+The later Owner addendum authorized Linux GitHub Actions Chromium as a separate browser
+environment. That gate now has actual create/measurement/rendering, lost-acknowledgement,
+POST-count, database/audit and guarded cleanup evidence; see the linked CI report above.
+No Windows Chrome writer PASS is claimed. PR #15 remains Draft for Owner evidence review
+and independent review of the new test/CI delta (PENDING). The earlier Antigravity review
+applies to aa2d33c as reported by Owner; it does not silently approve subsequent changes.
+No merge/deployment occurred and no new D/W approval is required.

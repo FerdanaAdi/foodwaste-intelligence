@@ -59,10 +59,36 @@ final no-leftovers check. Failure screenshot/trace files exist only when a test 
 
 ## Verification status and residual review
 
-CI result must be read from PR #15 at the exact new HEAD. Until the new job has
-actually completed successfully, browser PASS is not established. A successful
-result may be reported as **Linux Chromium Browser E2E PASS** only; Windows Chrome
-writer E2E remains NOT RUN/BLOCKED as recorded in the prior reconciliation.
+**Linux Chromium Browser E2E PASS**, verified on 2026-11-06 in
+[Actions run 42220461409](https://github.com/FerdanaAdi/foodwaste-intelligence/actions/runs/42220461409)
+for PR head `c8c0df0ede3c092c345db3d5d92530a9d948f381` (Actions tests the PR merge ref).
+All six W-20–W-25 tests passed: 0 failed, 0 skipped, 0 flaky, each retry=0; one worker.
+Identity attachments confirm PostgreSQL 18.6 / fwi_test / fwi_demo_test for every test.
+Windows Chrome writer E2E remains NOT RUN/BLOCKED; this result makes no Windows claim.
+
+| Evidence | Verified result |
+|---|---|
+| W-20 event | UUID `303d40c3-d2f1-4752-ba49-06f65887e6fa`; exactly one POST/201, one event, zero measurements, three audits including org/site seed |
+| W-21 measurement | Event `c8a534e0-a9fd-4e78-8faa-afaa696c497f`, measurement `a61b264e-ff46-4adb-b06f-0d88b302d0a4`; one measurement POST/201, one event, one measurement, four audits |
+| Lost acknowledgement | Each committed row has exactly one matching creation audit before 503; UNKNOWN + refresh adds no POST/row/audit; complete database hashes remain equal |
+| W-22 | POST statuses 201/422/201; one event/one measurement/four audits after correction |
+| W-23 | UUID survives refresh; detail GETs preserve full database hash and POST count |
+| W-24 | Event `704577f1-2fc4-4451-8e92-b35e28855251`; five distinct measurements, eight audits; exact Decimal/null/zero and distinct statuses, DemoStore separation |
+| W-25 | Denied boundary probes forward zero POSTs; zero events/measurements and only two seed audits |
+| Cleanup | Six per-test manifests verified absent individually and again in always-cleanup; cleanup_verified=true, remaining_owned_schemas=[] |
+| Regression | 101 Vitest, one real proxy test, typecheck/build PASS; 76 backend tests + six subtests PASS, no skips, including 14 PostgreSQL cases; repository verification PASS |
+
+W-20 pre/post hash: `610abb6ac75678f8b9e758275f69a3cae2049e5e1e7949457d73f417c207ae0b`.
+W-21 pre/post hash: `38cd89f82c8998d3532e8e236bff0018903a063781c226fb2a66089f33b84efa`.
+The downloaded JSON attachments were checked against counts, POST logs, saved UUIDs,
+identity and cleanup manifests; these are database reads, not mocked persistence.
+Artifact `chromium-integrity-42220461409-1` contains the reports and attachments (7 days).
+
+The first run, [42219459042](https://github.com/FerdanaAdi/foodwaste-intelligence/actions/runs/42219459042),
+had two passes/four failures because exact select-label selectors included option text.
+Its failure screenshots/traces and six-schema successful cleanup were uploaded.
+Only those test selectors were corrected; no application fix or automatic retry occurred.
+The passing run used fresh schemas. No local development database or QA worktree was accessed for writes.
 
 The prior independent review was reported by Owner for aa2d33c. This new test/CI
 delta still needs independent review and Owner evidence approval. The application
