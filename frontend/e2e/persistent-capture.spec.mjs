@@ -87,8 +87,10 @@ async function createEvent(page) {
 }
 
 async function fillMeasurement(page, { status = 'observed', gross = LONG, tare = '0', net = LONG } = {}) {
-  await page.getByLabel('Observation status', { exact: true }).selectOption(status);
-  await page.getByLabel('Mass basis provisional', { exact: true }).selectOption('as_served');
+  // These wrapping labels include the select's option text in the browser DOM.
+  // Match the stable label prefix rather than requiring an exact textContent.
+  await page.getByLabel(/^Observation status/).selectOption(status);
+  await page.getByLabel(/^Mass basis provisional/).selectOption('as_served');
   if (!['missing', 'not_measured'].includes(status)) {
     await page.getByLabel('gross (kg)', { exact: true }).fill(gross);
     await page.getByLabel('tare (kg)', { exact: true }).fill(tare);
