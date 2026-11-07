@@ -150,6 +150,36 @@ def counts(factory):
                      for model in (WasteEvent, Measurement, AuditEvent))
 
 
+@pytest.mark.parametrize('operation', ['event', 'measurement'])
+def test_committed_write_can_have_unknown_transport_outcome(database, operation):
+    """A client must not replay a failed acknowledgement after a real commit."""
+    from starlette.middleware.base import BaseHTTPMiddleware
+    from starlette.responses import JSONResponse
+    app = create_app()
+    class LoseAcknowledgement(BaseHTTPMiddleware):
+        async def dispatch(self, request, call_next):
+            response = await call_next(request)
+            if request.method == 'POST' and response.status_code == 201:
+                return JSONResponse({'detail': 'synthetic lost acknowledgement after commit'}, status_code=503)
+            return response
+    try:
+        event_id = demo.create_event(database, dict(organization_id=ORGANIZATION_ID, site_id=SITE_ID,
+            event_type='at_risk_surplus', occurred_at=datetime.now(timezone.utc)))['event_id'] if operation == 'measurement' else None
+        before = counts(database)
+        app.add_middleware(LoseAcknowledgement)
+        with TestClient(app) as client:
+            if operation == 'event':
+                response = client.post('/demo/v0.1/events', json=dict(organization_id=str(ORGANIZATION_ID),
+                    site_id=str(SITE_ID), event_type='at_risk_surplus', occurred_at='2026-11-06T12:00:00+08:00'))
+            else:
+                response = client.post(f'/demo/v0.1/events/{event_id}/measurements', json=measurement_payload())
+            assert response.status_code == 503
+            delta = (1, 0, 1) if operation == 'event' else (0, 1, 1)
+            assert counts(database) == tuple(a + b for a, b in zip(before, delta))
+    finally:
+        app.state.session_factory.kw['bind'].dispose()
+
+
 def test_persistence_across_restart_and_remeasurement(database):
     app = create_app()
     with TestClient(app) as client:

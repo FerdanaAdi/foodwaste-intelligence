@@ -1,14 +1,10 @@
 # FWI AI Handoff
-- **Task / branch:** FWI-INT-003 / `codex/fwi-int-003-read-only-detail`; base main `98bbbbd` (PR #13 merged).
-- **Scope:** isolated `/backend-demo/events/:eventId` reader; two existing GETs, independent DTO/parser, no DemoStore fallback.
-- **Contract:** UUID, exact decimal strings/null, five statuses, six unchanged provisional bases, provenance and aware timestamps.
-- **UI:** loading/retry, invalid UUID, 404/503/network/timeout/malformed/partial/stale handling; explicit source; no snapshot claim.
-- **Transport:** fixed loopback GET-only development proxy; no new dependencies, schema, migration, domain behavior or development DB writes.
-- **Fixtures:** shared synthetic wire JSON; existing guarded test schema + APIs create one event with five measurements.
-- **Local tests:** 78 Vitest PASS; proxy HTTP PASS; typecheck/build PASS; backend 71 PASS + 6 subtests; 12 PostgreSQL tests; kit PASS.
-- **Read-only evidence:** repeated GETs leave all rows of all five business tables, including audit, unchanged.
-- **Prior local DB evidence:** both roles authenticated on PG18.6; dev demo_0001 applied in prior task; no new migration this task.
-- **Sources:** accepted ADRs/repo domain contract; original FWI-02/03/04 and source desk-scenario IDs unavailable locally.
-- **Risks:** no auth; demo-only vocabulary; two non-atomic GETs; existing deprecation warnings; no full browser-to-DB smoke claim.
-- **Review:** Antigravity should inspect source isolation, parser, proxy, stale/partial handling and read-only test; see docs/frontend/backend-detail-v0.1.md.
-- **Preserved:** untracked GOV task and frontend QA worktree; OP-08/FI-02/NI-03 HELD; no merge/deploy.
+- **Task:** FWI-INT-005 / `codex/fwi-int-005-persistent-capture`, main base `8f64e62`; Owner D-01–D-06/W-20–W-25 and Linux CI addendum approved.
+- **Scope:** isolated capture, two existing POSTs, stable event UUID, exact Decimal/null, five statuses/six provisional bases; no DemoStore mapping, schema or methodology change.
+- **Implementation:** journal fails closed/no replay, route context reset, response/input association, scoped Vite boundary; final CI delta changes tests/config/docs only.
+- **Regression:** CI typecheck/build/proxy PASS, 101 Vitest PASS; required PostgreSQL 76 tests + six subtests PASS (14 PostgreSQL cases), no skips; kit PASS.
+- **Browser/security:** hardened Linux Chromium 6/6 PASS at ccfc192, Actions 42237668373/artifact 13512937253; correct password/used_password PASS, wrong-password auth rejection PASS, loopback publish verified; Windows writer NOT TESTED.
+- **Integrity/cleanup:** real 201 + row/audit before W-20/21 test-only 503; one POST/no replay; all six owned schemas absent; PostgreSQL 18.6 fwi_test/fwi_demo_test only, no dev writes; GOV/QA preserved.
+- **Evidence:** docs/frontend/ci-browser-integrity.md; prior 079f78c run 42221023864/artifact 13502784462 retained as baseline. Current artifacts pass URL/fixture scan, diff metadata disabled via CI-only wrapper; seven-day retention.
+- **Limits:** original FWI-01/02/03/04 unavailable; no full methodology validation, exactly-once/auth or cross-client deduplication; OP-08/FI-02/NI-03 HELD; existing npm advisories need separate follow-up.
+- **Review/next:** TECHNICAL CI PASS — INDEPENDENT SIGN-OFF PENDING; three jobs SUCCESS, six owned schemas absent; abrupt termination/missing manifests RESIDUAL. Antigravity must review delta from 079f78c; PR #15 Draft, HOLD for sign-off, no merge/deploy.

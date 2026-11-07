@@ -47,3 +47,103 @@ jobs:
       - run: npm test
       - run: npm run test:proxy
       - run: npm run build
+  chromium-browser-integrity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: fwi_test
+          POSTGRES_DB: fwi_demo_test
+          # Ephemeral isolated CI service only; public synthetic fixture below.
+          # This never modifies Windows PostgreSQL authentication/configuration.
+          # Nonsecret synthetic CI fixture; never use on non-CI databases.
+          POSTGRES_PASSWORD: synthetic_ci_only
+        ports:
+          # Publish only on the host runner loopback interface.
+          - 127.0.0.1:5432:5432
+        options: >-
+          --health-cmd "pg_isready -U fwi_test -d fwi_demo_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      FWI_REQUIRE_POSTGRES: '1'
+      FWI_BROWSER_RUN_TOKEN: '${{ github.run_id }}-${{ github.run_attempt }}'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Mask synthetic CI password and configure scoped test URL
+        run: |
+          # The fixture password is not a secret, but keep it out of subsequent step logs.
+          ci_pass="$(printf '%s_%s' synthetic ci_only)"
+          echo "::add-mask::$ci_pass"
+          printf 'FWI_TEST_DATABASE_URL=postgresql+psycopg://fwi_test:%s@127.0.0.1:5432/fwi_demo_test\n' "$ci_pass" >> "$GITHUB_ENV"
+      - run: python -m pip install -e '.[dev]'
+      - name: Verify browser CI PostgreSQL rejects incorrect credentials
+        run: |
+          python - <<'PYTEST'
+          import os
+          import psycopg
+          from sqlalchemy.engine import make_url
+
+          url = make_url(os.environ['FWI_TEST_DATABASE_URL'])
+          assert url.username == 'fwi_test' and url.database == 'fwi_demo_test'
+          assert url.host == '127.0.0.1' and url.port == 5432 and url.password
+          kwargs = dict(host=url.host, port=url.port, user=url.username,
+                        dbname=url.database, connect_timeout=5)
+          with psycopg.connect(**kwargs, password=url.password) as connection:
+              role, database, version = connection.execute(
+                  "SELECT current_user, current_database(), current_setting('server_version_num')::integer"
+              ).fetchone()
+              assert (role, database) == ('fwi_test', 'fwi_demo_test')
+              assert 180000 <= version < 190000
+              assert connection.pgconn.used_password, 'TCP connection did not use a password'
+          print('CI PostgreSQL: correct password accepted; fwi_test/fwi_demo_test; PostgreSQL 18; used_password=true')
+          try:
+              with psycopg.connect(**kwargs, password='ci_intentionally_wrong'):
+                  raise AssertionError('Incorrect PostgreSQL CI password was accepted')
+          except psycopg.OperationalError as error:
+              # libpq startup failures can lack SQLSTATE; do not accept generic
+              # network failures as evidence of password authentication rejection.
+              if (error.sqlstate != '28P01' and
+                      'password authentication failed for user "fwi_test"' not in str(error)):
+                  raise AssertionError('Negative password probe failed without authentication evidence') from None
+          print('CI PostgreSQL: incorrect password rejected with password authentication failure')
+          PYTEST
+      - run: npm ci
+        working-directory: frontend
+      - run: npx playwright install --with-deps chromium
+        working-directory: frontend
+      - name: Linux Chromium Browser E2E (no retries, one worker)
+        run: |
+          # Keep workflow DSNs/public password fixtures out of report gitDiff metadata.
+          # The wrapper is CI-temporary; the repository Playwright config is unchanged.
+          node --input-type=module <<'JS'
+          import { writeFileSync } from 'node:fs';
+          writeFileSync('.playwright-ci-security.config.mjs',
+            "import config from './playwright.config.mjs';\n" +
+            "export default { ...config, captureGitInfo: { commit: true, diff: false } };\n");
+          JS
+          npm run test:e2e:ci -- --config=.playwright-ci-security.config.mjs
+        working-directory: frontend
+      - name: Always clean and verify exact owned schemas
+        if: always()
+        run: python scripts/browser_e2e_harness.py cleanup
+      - name: Upload browser report, failure screenshot/trace and database evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chromium-integrity-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 7
+          if-no-files-found: warn
+          path: |
+            frontend/playwright-report/
+            frontend/test-results/
+            frontend/browser-evidence/

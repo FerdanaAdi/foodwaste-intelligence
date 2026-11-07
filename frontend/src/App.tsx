@@ -10,6 +10,7 @@ import QuickCapturePage from "./pages/QuickCapturePage";
 import ReviewAuditPage from "./pages/ReviewAuditPage";
 import ExportPreviewPage from "./pages/ExportPreviewPage";
 import BackendEventDetailPage from "./pages/BackendEventDetailPage";
+import BackendCapturePage from "./pages/BackendCapturePage";
 
 export default function App() {
   const store = useMemo(() => createDemoStore(), []);
@@ -18,6 +19,7 @@ export default function App() {
       <Routes>
         <Route element={<AppLayout />}>
           <Route path="/backend-demo" element={<BackendEventDetailPage />} />
+          <Route path="/backend-demo/capture" element={<BackendCapturePage />} />
           <Route path="/backend-demo/events/:eventId" element={<BackendEventDetailPage />} />
           <Route path="/" element={<DashboardPage />} />
           <Route path="/events" element={<EventLedgerPage />} />

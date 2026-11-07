@@ -1,11 +1,11 @@
-// Real loopback HTTP verification of the development proxy; no database writes.
+// Real loopback HTTP verification of scoped synthetic GET/POST development proxy.
 import { strict as assert } from "node:assert";
 import { createServer as httpServer } from "node:http";
 import { once } from "node:events";
 import { test } from "node:test";
 import { createServer, loadConfigFromFile } from "vite";
 
-test("development proxy allows only scoped GETs and strips credentials", async () => {
+test("W-25: only the exact scoped routes and methods forward, and secrets are stripped", async () => {
   const received = [];
   const backend = httpServer((req, res) => {
     received.push({ method: req.method, headers: req.headers, url: req.url });
@@ -22,27 +22,35 @@ test("development proxy allows only scoped GETs and strips credentials", async (
     assert.equal(config.server.host, "127.0.0.1");
     const [context, proxy] = Object.entries(config.server.proxy)[0];
     assert.equal(proxy.target, "http://127.0.0.1:8000");
-    // Only this test redirects the fixed loopback target to an ephemeral fake backend.
     vite = await createServer({ ...config, configFile: false,
       optimizeDeps: { noDiscovery: true, include: [], entries: [] }, server: {
-      ...config.server, port: 0,
-      proxy: { [context]: { ...proxy, target: `http://127.0.0.1:${backend.address().port}` } },
-    } });
+        ...config.server, port: 0,
+        proxy: { [context]: { ...proxy, target: `http://127.0.0.1:${backend.address().port}` } },
+      } });
     await vite.listen();
     const origin = `http://127.0.0.1:${vite.httpServer.address().port}`;
     const path = "/demo/v0.1/events/33333333-3333-4333-8333-333333333333";
+    const jsonHeaders = { "Content-Type": "application/json", cookie: "synthetic=test", authorization: "synthetic-test-only", "proxy-authorization": "synthetic-proxy-only", origin };
     for (const suffix of ["", "/measurements"]) {
-      const response = await fetch(origin + path + suffix, { headers: { cookie: "synthetic=test", authorization: "synthetic-test-only" } });
+      const response = await fetch(origin + path + suffix, { headers: jsonHeaders });
       assert.equal(response.status, 200);
-      assert.deepEqual(await response.json(), { synthetic: true });
     }
-    for (const method of ["POST", "PATCH", "DELETE"]) {
+    for (const url of ["/demo/v0.1/events", `${path}/measurements`]) {
+      const response = await fetch(origin + url, { method: "POST", headers: jsonHeaders, body: "{}" });
+      assert.equal(response.status, 200);
+    }
+    for (const method of ["PUT", "PATCH", "DELETE", "OPTIONS"]) {
       assert.equal((await fetch(origin + path, { method })).status, 405);
     }
     assert.equal((await fetch(origin + "/demo/v0.1/events")).status, 404);
     assert.equal((await fetch(origin + path + "/audit")).status, 404);
-    assert.equal(received.length, 2);
-    assert.ok(received.every(r => r.method === "GET" && !r.headers.cookie && !r.headers.authorization));
+    assert.equal((await fetch(origin + "/demo/v0.1/events/bad/measurements", { method: "POST", headers: jsonHeaders, body: "{}" })).status, 404);
+    assert.equal((await fetch(origin + path, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).status, 404);
+    assert.equal((await fetch(origin + "/demo/v0.1/events", { method: "POST", body: "{}" })).status, 415);
+    assert.equal((await fetch(origin + "/demo/v0.1/events", { method: "POST", headers: { "content-type": "application/json", origin: "http://evil.example" }, body: "{}" })).status, 403);
+    assert.equal(received.length, 4);
+    assert.ok(received.every(r => !r.headers.cookie && !r.headers.authorization && !r.headers["proxy-authorization"]));
+    assert.deepEqual(received.map(r => r.method), ["GET", "GET", "POST", "POST"]);
   } finally {
     if (vite) await vite.close();
     backend.closeAllConnections();
