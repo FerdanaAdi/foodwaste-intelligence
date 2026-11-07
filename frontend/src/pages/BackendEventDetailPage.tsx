@@ -64,6 +64,9 @@ export default function BackendEventDetailPage() {
     <p>Sumber: FastAPI / PostgreSQL — read-only. Terpisah dari DemoStore in-memory.</p>
     <p>Dua GET dibaca terpisah, bukan snapshot atomik. Pengukuran tidak dijumlahkan atau dipilih sebagai hasil kanonik.</p>
     <p>Vocabulary dan aturan measured-zero adalah kontrak backend demo provisional. API belum menyediakan status validasi, teks input asli, atau catatan review.</p>
+    <Link className="inline-block rounded border px-4 py-2 text-sky-700" to={eventId && isUUID(eventId) ? `/backend-demo/capture?event=${eventId.toLowerCase()}` : "/backend-demo/capture"}>
+      {eventId && isUUID(eventId) ? "Kembali: tambah pengukuran pada event ini" : "Buat event sintetis di backend"}
+    </Link>
     <form className="flex flex-wrap items-end gap-2" onSubmit={e => { e.preventDefault(); navigate(`/backend-demo/events/${encodeURIComponent(input.trim())}`); }}>
       <label className="flex grow flex-col gap-1">Event UUID backend<input className="rounded border p-2" required value={input} onChange={e => setInput(e.target.value)} /></label>
       <button className="rounded border px-4 py-2" type="submit">Buka event backend</button>

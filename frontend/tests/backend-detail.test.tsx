@@ -18,6 +18,16 @@ function mount(path = `/backend-demo/events/${id}`) {
 }
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 describe("backend detail read-only route", () => {
+  it("returns to measurement capture with the same event UUID using only GET", async () => {
+    const user = userEvent.setup();
+    mockAPI(); mount();
+    await screen.findByText(fixture.measurement.measurement_id);
+    await user.click(screen.getByRole('link', { name: 'Kembali: tambah pengukuran pada event ini' }));
+    await screen.findByText(/Event dikonfirmasi:/);
+    expect(screen.getByRole('button', { name: 'Simpan measurement ke event ini' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Simpan event backend' })).not.toBeInTheDocument();
+    for (const call of vi.mocked(fetch).mock.calls) expect(call[1]?.method).toBe('GET');
+  });
   it("renders every observation, exact decimal/null and separate timestamps without totals", async () => {
     mockAPI(["observed", "estimated", "missing", "measured_zero", "not_measured"].map((observation_status, index) => ({
       ...fixture.measurement, measurement_id: `44444444-4444-4444-8444-44444444444${index}`,

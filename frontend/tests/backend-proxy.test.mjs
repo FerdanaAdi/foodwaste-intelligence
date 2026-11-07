@@ -14,6 +14,12 @@ test("W-25: only the exact scoped routes and methods forward, and secrets are st
   });
   let vite;
   try {
+    // Vite treats port 0 as its default port; reserve a concrete free port instead.
+    const probe = httpServer();
+    probe.listen(0, '127.0.0.1');
+    await once(probe, 'listening');
+    const port = probe.address().port;
+    await new Promise(resolve => probe.close(resolve));
     backend.listen(0, "127.0.0.1");
     await once(backend, "listening");
     const loaded = await loadConfigFromFile({ command: "serve", mode: "development" });
@@ -24,7 +30,7 @@ test("W-25: only the exact scoped routes and methods forward, and secrets are st
     assert.equal(proxy.target, "http://127.0.0.1:8000");
     vite = await createServer({ ...config, configFile: false,
       optimizeDeps: { noDiscovery: true, include: [], entries: [] }, server: {
-        ...config.server, port: 0,
+        ...config.server, port,
         proxy: { [context]: { ...proxy, target: `http://127.0.0.1:${backend.address().port}` } },
       } });
     await vite.listen();

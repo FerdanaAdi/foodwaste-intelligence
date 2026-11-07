@@ -49,7 +49,7 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       "^/demo/v0\\.1/events(?:/[0-9a-fA-F-]+(?:/measurements)?)?$": {
-        target: "http://127.0.0.1:8000",
+        target: process.env.FWI_LOCAL_SYNTHETIC_DEMO === "1" ? "http://127.0.0.1:18000" : "http://127.0.0.1:8000",
         configure(proxy) {
           proxy.on("proxyReq", request => {
             request.removeHeader("cookie");

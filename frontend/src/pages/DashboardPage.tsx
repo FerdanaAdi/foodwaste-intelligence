@@ -49,6 +49,13 @@ export default function DashboardPage() {
         </p>
       </header>
 
+      <section className="rounded border border-sky-300 bg-sky-50 p-4 space-y-2" aria-label="Demo persisten PostgreSQL">
+        <h2 className="text-lg font-semibold">Coba pencatatan persisten</h2>
+        <p>Buat event sintetis → tambah pengukuran → buka detail → muat ulang. Data disimpan melalui FastAPI ke PostgreSQL lokal yang disiapkan khusus.</p>
+        <Link className="inline-block rounded bg-sky-700 px-4 py-2 text-white" to="/backend-demo/capture">Mulai demo persisten</Link>
+        <p className="text-sm">Kartu dan ledger di bawah tetap memakai DemoStore in-memory; data backend tidak masuk ke hitungan ini.</p>
+      </section>
+
       <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {tiles.map((tile) => (
           <li key={tile.label}>
@@ -80,7 +87,7 @@ export default function DashboardPage() {
             Angka di atas adalah hitungan record demo (fiktif), bukan perkiraan food waste nyata.
             KPI OP-08, FI-02, dan NI-03 berstatus HELD dan tidak dihitung.
           </p>
-          <p>Data in-memory direset saat halaman dimuat ulang; belum ada backend/PostgreSQL.</p>
+          <p>Data dashboard ini in-memory dan direset saat halaman dimuat ulang. Demo persisten tersedia melalui halaman capture backend yang terpisah.</p>
         </CardContent>
       </Card>
     </div>

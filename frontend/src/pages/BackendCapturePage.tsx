@@ -158,10 +158,11 @@ export default function BackendCapturePage() {
       <h1 className="text-2xl font-bold">Capture backend persisten — sintetis</h1>
       <p>FastAPI/PostgreSQL lokal, kontrak Demo v0.1 provisional. Terpisah sepenuhnya dari QuickCapture dan DemoStore in-memory.</p>
       <p className="text-sm text-amber-800">Bukan sistem resmi BGN. Belum ada autentikasi produksi, idempotency atau penyimpanan input verbatim. Dua POST adalah dua transaksi terpisah.</p>
-      <Link className="text-sky-700 underline" to="/backend-demo">Buka detail backend (read-only)</Link>
+      <p className="text-sm">Alur demo: 1. Buat event → 2. Tambah pengukuran → 3. Buka detail dan muat ulang. Simpan URL detail untuk membaca UUID yang sama.</p>
+      <Link className="text-sky-700 underline" to={eventId ? `/backend-demo/events/${eventId}` : "/backend-demo"}>Buka detail backend (read-only)</Link>
     </header>
 
-    {locked && <section role="alert" className="rounded border-2 border-amber-600 bg-amber-50 p-4 space-y-3">
+    {locked && !busy && <section role="alert" className="rounded border-2 border-amber-600 bg-amber-50 p-4 space-y-3">
       <h2 className="font-semibold">Hasil penyimpanan belum dapat dipastikan (UNKNOWN)</h2>
       <p>POST {journal.operation} mungkin telah commit. Tidak ada retry otomatis atau tombol kirim ulang. Jangan membuat record baru sebelum investigasi.</p>
       {journal.eventId && <Link className="text-sky-700 underline" to={`/backend-demo/events/${journal.eventId}`}>Periksa riwayat event {journal.eventId} (GET)</Link>}
@@ -174,6 +175,7 @@ export default function BackendCapturePage() {
       }}>Saya sudah memeriksa dan memahami risiko; buka kunci</button>
     </section>}
     {feedback && <p role={feedback.kind === "success" ? "status" : "alert"} className="rounded border bg-white p-3">{feedback.message}</p>}
+    {busy && <p role="status">Sedang menyimpan ke backend… Tunggu hasilnya; jangan kirim ulang atau tutup halaman.</p>}
     {readFeedback && <p role="alert" className="rounded border p-3">{readFeedback}</p>}
 
     <form onSubmit={attachKnownEvent} className="rounded border bg-white p-4 space-y-2">
@@ -199,7 +201,8 @@ export default function BackendCapturePage() {
       <button type="submit" className="rounded bg-sky-700 px-4 py-2 text-white disabled:opacity-50" disabled={busy || locked}>Simpan event backend</button>
     </form>}
 
-    {routeId && !eventId && <p role="status">Memeriksa UUID event yang diketahui dari PostgreSQL…</p>}
+    {routeId && !eventId && !readFeedback && <p role="status">Memeriksa UUID event yang diketahui dari PostgreSQL…</p>}
+    {routeId && readFeedback && <button type="button" className="rounded border px-4 py-2" disabled={busy} onClick={() => setAttempt(n => n + 1)}>Coba baca ulang (GET saja)</button>}
     {eventId && <section className="rounded border bg-white p-4 space-y-2">
       <h2 className="text-lg font-semibold">Event backend saat ini</h2>
       <p className="break-all font-mono">{eventId}</p>
@@ -210,6 +213,7 @@ export default function BackendCapturePage() {
 
     {eventId && <form onSubmit={e => { void submitMeasurement(e); }} noValidate className="rounded border bg-white p-4 space-y-4">
       <h2 className="text-lg font-semibold">2. Tambah measurement pada event yang sama</h2>
+      <p className="text-sm">Status: observed = teramati, estimated = estimasi, measured_zero = nol terukur, missing = nilai tidak tersedia, not_measured = tidak diukur. Missing/tidak diukur menyimpan null, bukan 0 kg.</p>
       <label className="block">Observation status
         <select className={field} value={measurement.observation_status} onChange={e => changeStatus(e.target.value as MeasurementInput["observation_status"])}>
           <option value="">— Pilih status —</option>{BACKEND_STATUSES.map(v => <option value={v} key={v}>{v}</option>)}
@@ -220,10 +224,10 @@ export default function BackendCapturePage() {
           <option value="">— Pilih basis —</option>{BACKEND_MASS_BASES.map(v => <option value={v} key={v}>{v}</option>)}
         </select>
       </label>
-      {(["gross", "tare", "net"] as const).map(name => <label className="block" key={name}>{name} (kg)
+      <div className="grid gap-3 sm:grid-cols-3">{(["gross", "tare", "net"] as const).map(name => <label className="block" key={name}>{name} (kg)
         <input className={field} inputMode="decimal" value={measurement[name] ?? ""} disabled={measurement.observation_status === "missing" || measurement.observation_status === "not_measured"} onChange={e => setMeasurement(m => ({ ...m, [name]: e.target.value }))} aria-invalid={!!fieldErrors[name]} />
         {fieldErrors[name] && <span className="text-red-700">{fieldErrors[name]}</span>}
-      </label>)}
+      </label>)}</div>
       <p className="text-sm">Gross, tare, net diisi manual; backend memvalidasi pengurangan dengan Decimal. Tidak ada default tare atau pembulatan.</p>
       <label className="block">Measurement method<input className={field} value={measurement.measurement_method} onChange={e => setMeasurement(m => ({ ...m, measurement_method: e.target.value }))} />{fieldErrors.measurement_method && <span className="text-red-700">{fieldErrors.measurement_method}</span>}</label>
       <label className="block">Provenance sintetis<input className={field} value={measurement.provenance} onChange={e => setMeasurement(m => ({ ...m, provenance: e.target.value }))} />{fieldErrors.provenance && <span className="text-red-700">{fieldErrors.provenance}</span>}</label>

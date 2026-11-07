@@ -42,6 +42,8 @@ describe("FWI-INT-005 backend capture page", () => {
     const submit = screen.getByRole("button", { name: "Simpan event backend" });
     fireEvent.click(submit); fireEvent.click(submit);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(screen.getByText(/Sedang menyimpan ke backend/)).toBeInTheDocument();
+    expect(screen.queryByText(/Hasil penyimpanan belum dapat dipastikan \(UNKNOWN\)/)).not.toBeInTheDocument();
     resolve(response(event, 201));
     await waitFor(() => expect(screen.getByText(/Event disimpan:/)).toBeInTheDocument());
   });
@@ -135,6 +137,7 @@ describe("FWI-INT-005 backend capture page", () => {
     await screen.findByText(/Event dikonfirmasi/);
     fireEvent.click(screen.getByRole('button', { name: 'Switch invalid context' }));
     await screen.findByText('UUID pada URL tidak valid.');
+    expect(screen.queryByText(/Memeriksa UUID event yang diketahui/)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Simpan measurement ke event ini' })).not.toBeInTheDocument();
     expect(screen.queryByText(/Event dikonfirmasi/)).not.toBeInTheDocument();
     expect(fetchMock.mock.calls).toHaveLength(2);

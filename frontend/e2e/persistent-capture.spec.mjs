@@ -6,8 +6,9 @@ const EVENT_PATH = '/demo/v0.1/events';
 const LONG = '0.123456789012345678901234567890123456789';
 const test = base.extend({
   backend: async ({}, use, testInfo) => {
-    if (process.platform !== 'linux' || process.env.GITHUB_ACTIONS !== 'true') {
-      throw new Error('This authorized browser gate runs only in Linux GitHub Actions');
+    const ci = process.platform === 'linux' && process.env.GITHUB_ACTIONS === 'true';
+    if (!ci && process.env.FWI_LOCAL_SYNTHETIC_DEMO !== '1') {
+      throw new Error('Requires Linux CI or explicit local synthetic demo opt-in');
     }
     const child = spawn('python', ['-u', '../scripts/browser_e2e_harness.py', 'serve'], { stdio: ['pipe', 'pipe', 'inherit'] });
     const queue = [], readers = [];
@@ -40,6 +41,10 @@ const test = base.extend({
     let identity;
     try {
       identity = await next();
+      if (identity.closed) {
+        const failure = await next();
+        throw new Error(`Backend startup failed: ${failure.harness_error || 'UnknownFailure'} ${JSON.stringify(failure.frames || [])}`);
+      }
       expect(identity.ready).toBe(true);
       expect(identity.identity.role).toBe('fwi_test');
       expect(identity.identity.database).toBe('fwi_demo_test');
@@ -194,6 +199,7 @@ test('W-22: reject inconsistent mass, correct it on the same event without dupli
 });
 
 test('W-23: read-after-write and direct refresh preserve UUID and never submit again', async ({ page, backend }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
   const eventId = await createEvent(page);
   await fillMeasurement(page);
   await submitMeasurement(page, eventId);
@@ -205,6 +211,12 @@ test('W-23: read-after-write and direct refresh preserve UUID and never submit a
   await page.getByRole('link', { name: 'Detail dan riwayat read-only', exact: true }).click();
   await expect(page.getByRole('article')).toHaveCount(1);
   await expect(page.getByText(`${LONG} kg`, { exact: true })).toHaveCount(2);
+  await page.reload();
+  await expect(page.getByRole('article')).toHaveCount(1);
+  await page.getByRole('link', { name: 'Kembali: tambah pengukuran pada event ini' }).click();
+  await expect(page.getByText(/Event dikonfirmasi:/)).toBeVisible();
+  expect(new URL(page.url()).searchParams.get('event')).toBe(eventId);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   const after = await backend.snapshot();
   expect(after.sha256).toBe(before.sha256);
   expect(after.posts).toEqual(before.posts);
