@@ -1,18 +1,21 @@
 # FWI — concise project context
-Updated: 2026-11-04 | **Working reference, not a regulatory source or production authorization.**
+Updated: 2026-11-07 | **Working reference; synthetic-data-only; not a regulatory, field-validation or production authorization.**
 
-- FWI measures and analyzes food loss/waste for MBG/SPPG as **independent analytical decision support**.
-- Authoritative internal sources: FWI-01 v1.0 (research), FWI-02 v1.0 (architecture), FWI-03 v1.3 (methodology), FWI-04 MVP v0.1 (product blueprint). Documents are external to this kit; retain exact source versions and approved amendments.
-- Core design: six conceptual operational stages, event ≠ measurement ≠ transfer ≠ disposition; no double counting; mass-basis traceability and measured-vs-estimated data quality.
-- MVP P0 priority: organization/access, minimum master data, unique waste event, gross/tare/net measurement, data quality/audit log, CSV/XLSX export. P1 includes lineage/disposition/dashboard. P2 includes controlled KPIs and future integrations.
-- KPI candidate status per FWI-03 v1.3: 24 total; 3 design-pass preview, 18 conditional, 3 held (OP-08/FI-02/NI-03). **These are methodological statuses, not deployment authorization.**
-- Gates: G0 desk validation complete; G1 internal sign-off not formally complete, G2 expert, G3 bench, G4 field, G5 activation not complete according to available dossier.
-- Prototype permitted with synthetic data and relevant FWI-03 desk regression scenarios. No permission implied for government APIs, actual SPPG data, pilot, deployment, or official KPI reports.
-- Technology status:
-  - ACCEPTED: ADR-001 — backend FastAPI 0.146 line, Python 3.14.x, SQLAlchemy 2.1 line (synchronous Session), Alembic; domain stays plain Python / framework-independent; async deferred until justified by evidence.
-  - ACCEPTED: ADR-002 — PostgreSQL 18.x canonical relational database; SQLite is not canonical persistence.
-  - OPEN (must not be silently closed): frontend framework; authentication strategy/provider; evidence/object storage; API style (beyond FastAPI baseline); deployment/hosting; offline/sync; correction/supersession persistence policy; final controlled vocabularies (source-gated); external government integration contracts.
-  - Accepted ADRs supersede earlier `OPEN` technology statements in older architecture/context documents.
-- Current implemented baseline: `src/fwi/domain/` domain package + `tests/test_domain_validation.py`; merged in repo: PRD v0.1, FWI-ARCH-001 v0.2 (**current merged architecture baseline**, merged via PR #8; v0.1 remains historical/superseded), ADR-001, ADR-002. No backend framework code yet.
-- Next work: governance reconciliation first, then backend bootstrap / physical schema as a separate implementation task (per ADR-001/ADR-002 follow-ups).
-- AI setup: ChatGPT Plus+Codex; Google AI Pro+Antigravity; GitHub Copilot Student; Z.ai GLM-5.3/Flash; NotebookLM and Gemini Deep Research for reference. User reports model availability; selector names/effort can change; absence from one inventory does not mean a tool/model is unavailable.
+## Domain and source precedence
+- FWI is independent decision support for food loss/waste in the MBG/SPPG context, **not** an official BGN system. Use only synthetic data; do not assume government integrations or actual SPPG permissions.
+- Domain/source baseline by concern: FWI-01 Research Foundation v1.0; FWI-02 Critical Reconciliation/Architecture Baseline v1.0; FWI-03 Consolidated Methodology v1.3; FWI-04 MVP Blueprint v0.1; controlled `docs/product/PRD-v0.1.md`; `docs/architecture/FWI-ARCH-001_System_Data_Architecture_v0.2.md`; accepted ADR and implemented Git `main`. External research files may not be present in coding-agent workspaces; verify versions before methodology decisions.
+- One real generation occurrence = one stable event ID; 0..n measurements per event. Event, measurement, validation, evidence, material transfer, and disposition are distinct. No double-counting; missing != measured zero; preserve gross/tare/net, original units, method, provenance, quality, timestamps and mass basis. Do not equate raw/cooked/as-served mass without justified conversion.
+- FWI-03 methodological gates (G0–G5) are **not** passed by software CI. KPI OP-08, FI-02 and NI-03 remain HELD/DISABLED. Safety and nutrition take precedence over waste minimization.
+
+## Accepted technology and active Git baseline
+- ADR-001: FastAPI + Python 3.14.x + SQLAlchemy 2.1 sync Session + Alembic; domain is framework-independent. ADR-002: PostgreSQL 18.x is canonical database. ADR-003: React 19/TypeScript/Vite/Tailwind/selected shadcn-ui, React Router, Vitest/RTL, **owner-approved for implementation and present in `main`**; do not infer production approval.
+- **Verified as of 2026-11-07:** PR #15 FWI-INT-005 merged/closed. Source HEAD `2f3107baf93877af2d9f1e369f691c73e361dd4d`; `main` merge commit `1fa344a9498ecded139a7e350a8e999b0feced79` (https://github.com/FerdanaAdi/foodwaste-intelligence/pull/15).
+- `main` includes FastAPI demo routes, PostgreSQL demo models/Alembic, React demo UI, read-only detail, and **isolated** persistent event/measurement capture at `/backend-demo/capture`. Existing QuickCapture/DemoStore is separate; do not describe the full P0 workflow as persistent or authenticated.
+- Pre-merge final-head GitHub Actions `42238190973` at `2f3107b`: `synthetic-tests`, `frontend-tests`, and `chromium-browser-integrity` all SUCCESS; W-20–W-25 6/6 PASS, zero retries on Linux Chromium. This is **not** evidence of a separate post-merge run on merge commit. Browser W-24 exercises five observation statuses with `mass_basis=as_served`; six mass bases are supported by the provisional contract, but not each browser-tested.
+- CI browser security: synthetic public fixture password, positive/negative authentication probes, runner loopback PostgreSQL port, guarded UUID/OID/owner schema cleanup. No Windows Chrome writer E2E claim, no cross-client idempotency claim, no production security claim.
+
+## Work in progress / decision boundaries
+- FR-001 demo authentication, server-enforced organization/site membership and permissions: **not implemented**. FR-002 master data/versioning, FR-005 evidence storage, FR-006 validation/correction lifecycle, FR-007 persistent site-scoped DQ dashboard, FR-008 authorized persistent export: incomplete/OPEN. FR-003/004 demo API and persistent capture are implemented but not a complete permissioned P0 journey.
+- OPEN: identity/session design and role/site rules (ADR-004 candidate); evidence storage and retention (ADR-005 candidate); selected measurement/supersession; final vocabulary; offline/sync; deployment/hosting; government integration permissions. Treat `OPEN-01`..`OPEN-12` in PRD according to their actual statuses; do not silently close them.
+- See `docs/ai/FWI-INT-005_POST_MERGE_RISK_REGISTER.md` for residual-risk boundaries and `docs/ai/FWI-SEC-01_DECISION_PACKET_v0_1.md` for **proposed, not approved** FR-001 options.
+- Next: separate docs-only post-merge review/PR; then Owner decision on FWI-SEC-01 architecture **before coding** any login or permissions. Keep new implementation on a fresh branch/worktree from verified `main`; no automatic merge, deployment, real data, or KPI activation.
