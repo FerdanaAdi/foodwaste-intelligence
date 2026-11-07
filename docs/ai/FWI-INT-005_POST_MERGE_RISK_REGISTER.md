@@ -1,0 +1,25 @@
+# FWI-INT-005 — Post-Merge Residual Risk Register
+
+**Status:** PROPOSED documentation, pending docs-only PR/review · **As of:** 2026-11-07 (Asia/Jakarta)
+
+**Evidence:** [PR #15 merged](https://github.com/FerdanaAdi/foodwaste-intelligence/pull/15), source `2f3107b`, merge commit `1fa344a`, [final PR-head CI](https://github.com/FerdanaAdi/foodwaste-intelligence/actions/runs/42238190973). No post-merge run or external field/production verification asserted. This register does not grant risk acceptance, architecture approval or merge permission.
+
+| ID / priority | Residual risk and evidence boundary | Existing mitigation / what was proven | Next decision or test (proposed) |
+|---|---|---|---|
+| R-INT-01 / MEDIUM | Dev Vite proxy can send demo requests to a loopback FastAPI instance pointing at the wrong local database (`fwi_demo_dev` instead of synthetic test). | Route/method/Origin/JSON boundaries and CI schema guards; documented test-only target. Those controls do **not** identify a misconfigured backend DB on a developer machine. | Before manual writer E2E, use an explicit local test-target preflight/guard and documented DB identity assertion; do not touch developer DBs in this task. |
+| R-INT-02 / LOW | `sessionStorage` UNKNOWN/replay lock is tab-scoped, not a backend guarantee of exactly-once across clients/tabs. | W-20/W-21 show exactly one forwarded POST and no automatic replay after lost acknowledgment in a single browser session. | Evaluate server idempotency request identity/semantic duplicate policy separately under PRD `OPEN-05`; do not promise P1 schedule or change event semantics silently. |
+| R-INT-03 / LOW | Abrupt CI host termination or lost manifest can prevent normal guarded cleanup; universality not proven. | Six owned schemas absent after completed run; UUID4, role, DB, OID, owner and run token guards; `if: always()` step. CI containers are ephemeral but that is not a zero-risk guarantee outside the observed environment. | Optional targeted fault-injection harness review and evidence retention; preserve fail-closed guards. |
+| R-INT-04 / LOW | Synthetic browser CI fixture password appears in repository source and initial Docker service startup logs; it is not a private secret. | Browser CI uses password authentication, negative auth probe, port `127.0.0.1:5432`, runner masking and artifact diff suppression. | Never reuse fixture outside CI; inspect artifacts after changes. Keep logs clear about masking limits. |
+| R-INT-05 / LOW | `synthetic-tests` job retains `5432:5432` port publication; only browser job received loopback restriction. | Job uses non-trust password auth, synthetic CI role and database. | Separate narrowly-scoped CI change after review; not a claim that all Postgres CI ports are loopback-only. |
+| R-INT-06 / LOW | Windows Chrome writer parity remains untested. | W-20–W-25 6/6 PASS Linux Chromium, one worker and zero retries. | Run Windows writer E2E only if platform access/policy permits, without bypassing security controls. |
+| R-INT-07 / TO TRIAGE | Existing npm dependency advisories and library deprecation warnings not fully triaged. | Current CI green; green tests do not establish absence of vulnerabilities. | Security audit with versions/advisory IDs, reachable surface, dependency upgrade plan, targeted regression tests; avoid unapproved upgrades. |
+| R-INT-08 / LOW | Seven-day browser CI artifact retention limits reproducibility after expiry. | Exact run links, code/test commitments and cleanup evidence reported; artifact verified while available. | Preserve an owner-approved, sanitized review summary/hash register without copying credentials or personal data. |
+| R-INT-09 / MEDIUM | FR-001 permissions are absent on current demo routes; frontend boundary alone is **not** authentication or site isolation. | Isolated demo/test-only API and synthetic seed; not publicly deployable or permissioned P0. | FWI-SEC-01 decision packet/ADR, backend object-level/site checks, AC-01 tests. Block public exposure until implemented and reviewed. |
+
+## Claim boundaries and disposition
+
+- **Closed technically in browser CI:** replacement of trust authentication, loopback browser-job port, positive/negative auth probe, normal-run schema cleanup. This does not close all listed residual risks.
+- **Review evidence:** reported independent Antigravity verdict `APPROVE WITH CONDITIONS`; the Owner merged PR #15 on 2026-11-07. That does not authorize new releases or field operation.
+- **Not proven:** Windows Chrome writer E2E; cross-client exactly-once; forced host-crash cleanup; full P0, scientific/field validation, secure real-user authentication.
+- **Gates:** treat `OP-08`, `FI-02`, `NI-03` as HELD; no double-counting, no missing-to-zero coercion, no merging event and remeasurement records.
+- **Next owner review:** prioritize R-INT-09 before persistent DQ dashboards/export; optionally treat R-INT-01 as a standalone targeted CI/local safety task. Leave all residual risk acceptance decisions explicit, not implied.
