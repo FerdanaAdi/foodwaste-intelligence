@@ -39,13 +39,11 @@ export default function AppLayout() {
             <p className="text-lg font-bold tracking-tight">
               FoodWaste Intelligence <span className="font-normal text-slate-500">— demo sintetis</span>
             </p>
-            <button
-              type="button"
-              disabled
-              className="hidden cursor-not-allowed rounded border border-slate-200 px-2 py-1 text-xs text-slate-400 sm:block"
+            <p
+              className="rounded border border-slate-200 px-2 py-1 text-xs text-slate-600"
             >
               {backendCapture ? "Sumber: API backend sintetis (write demo)" : backendMode ? "Sumber: API backend (read-only)" : "Sumber: DemoStore in-memory"}
-            </button>
+            </p>
           </div>
           <nav aria-label="Navigasi utama" className="overflow-x-auto">
             <ul className="flex min-w-max gap-1 pb-1">

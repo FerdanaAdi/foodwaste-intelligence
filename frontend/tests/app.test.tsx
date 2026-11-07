@@ -35,6 +35,13 @@ async function fillMeasurementForm(
 }
 
 describe("App shell", () => {
+  it("offers persistent capture while identifying dashboard data as in-memory", async () => {
+    const user = userEvent.setup();
+    renderApp();
+    expect(screen.getByText(/Kartu dan ledger di bawah tetap memakai DemoStore/)).toBeInTheDocument();
+    await user.click(screen.getByRole('link', { name: 'Mulai demo persisten' }));
+    expect(screen.getByRole('heading', { name: 'Capture backend persisten — sintetis' })).toBeInTheDocument();
+  });
   it("shows the synthetic demo banner", () => {
     renderApp();
     // Banner appears in the top strip and on the dashboard card.

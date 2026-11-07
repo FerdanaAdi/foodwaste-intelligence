@@ -1,4 +1,4 @@
-"""CI-only PostgreSQL/ASGI fixture control; no production or development targets."""
+"""Explicit local/CI PostgreSQL fixture control; no development targets."""
 import hashlib
 import json
 import os
@@ -27,8 +27,15 @@ TOKEN = os.environ.get('FWI_BROWSER_RUN_TOKEN')
 
 
 def guard_environment():
-    if os.environ.get('GITHUB_ACTIONS') != 'true' or not TOKEN or sys.platform != 'linux':
-        raise RuntimeError('browser harness requires the authorized Linux CI job')
+    ci = os.environ.get('GITHUB_ACTIONS') == 'true' and sys.platform == 'linux'
+    local = os.environ.get('FWI_LOCAL_SYNTHETIC_DEMO') == '1'
+    if not TOKEN or not (ci or local):
+        raise RuntimeError('requires authorized Linux CI or explicit local synthetic demo opt-in')
+    if local:
+        url = make_url(os.environ['FWI_TEST_DATABASE_URL'])
+        if (url.host != '127.0.0.1' or url.port != 5432 or url.username != 'fwi_test'
+                or url.database != 'fwi_demo_test' or url.password is not None or url.query):
+            raise RuntimeError('local demo requires password-free loopback fwi_test/fwi_demo_test URL; use pgpass')
 
 
 def emit(value):
@@ -39,7 +46,16 @@ def persist(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix('.tmp')
     temporary.write_text(json.dumps(value, indent=2, default=str), encoding='utf-8')
-    temporary.replace(path)
+    # Windows may briefly deny replacement while another process scans the file.
+    # Retry only evidence-file I/O, never a database operation or domain POST.
+    for attempt in range(5):
+        try:
+            temporary.replace(path)
+            break
+        except PermissionError:
+            if attempt == 4:
+                raise
+            time.sleep(.05 * (2 ** attempt))
 
 
 def manifest_path(schema):
@@ -73,6 +89,8 @@ def cleanup_all():
     try:
         for path in sorted(MANIFESTS.glob('fwi_demo_test_*.json')):
             record = json.loads(path.read_text(encoding='utf-8'))
+            if record.get('run_token') != TOKEN:
+                continue  # Never clean schemas/evidence belonging to another run.
             if path.resolve() != manifest_path(record['schema']):
                 raise RuntimeError('manifest name mismatch')
             clean(engine, record)
@@ -131,7 +149,8 @@ def serve():
                 if scope['type'] == 'http' and scope['method'] == 'POST':
                     posts.append({'path': scope['path'], 'status': status})
 
-        server = uvicorn.Server(uvicorn.Config(observed_app, host='127.0.0.1', port=8000, log_level='warning', access_log=False))
+        port = 18000 if os.environ.get('FWI_LOCAL_SYNTHETIC_DEMO') == '1' else 8000
+        server = uvicorn.Server(uvicorn.Config(observed_app, host='127.0.0.1', port=port, log_level='warning', access_log=False))
         thread = threading.Thread(target=server.run, daemon=True)
         thread.start()
         deadline = time.monotonic() + 15
@@ -181,5 +200,11 @@ if __name__ == '__main__':
             raise RuntimeError('unsupported harness mode')
     except Exception as error:
         # Never print connection URLs, environment, SQL parameters, or credentials.
-        emit({'harness_error': type(error).__name__})
+        frames = []
+        frame = error.__traceback__
+        while frame:
+            frames.append({'file': Path(frame.tb_frame.f_code.co_filename).name,
+                           'line': frame.tb_lineno})
+            frame = frame.tb_next
+        emit({'harness_error': type(error).__name__, 'frames': frames})
         sys.exit(1)
