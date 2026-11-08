@@ -1,3 +1,14 @@
+# FWI AI Handoff — CP11-A application reconciliation
+- Branch `codex/fwi-integration-01`; baseline `d5b3966c29a38ac196189b56dd79e2f6734357f6`. Owner permits only App.tsx, AppLayout.tsx and this handoff; no staging/commit/push/PR/merge/deploy.
+- CP1–CP10 locally committed (94 paths). DQ/Master/Evidence fixture pages mounted separately under `/demo/`; backend Event/Measurement routes retain the unchanged SEC-01D BackendAuthBoundary. No DTO conversion, candidate capture or backend API changes.
+- `/demo/export` explicitly unavailable, without candidate download controls. Existing serializer/candidate bytes remain intact; `authorization_enforced=false`, no export authorization or XLSX implied.
+- Gate A Owner-approved only for synthetic local integration/demo, not full FR-001/P0 or production. Missing remains distinct from zero; OP-08/FI-02/NI-03 HELD.
+- CP11 implementer verification: routing 11 PASS; frontend 272 PASS (serial), typecheck/build PASS; backend PostgreSQL 330 + 6 subtests PASS; proxy HTTPS 3 PASS; Windows Chrome W-20–W-25/SEC 10 PASS and fixture navigation smoke 1 PASS. Initial smoke selector ambiguity fixed in ignored test artifact only; no domain POST test rerun. Actual evidence/hashes/patch: `frontend/browser-evidence/cp11a-verification.json` (ignored).
+- Remaining P0: Gate B membership administration, persistent Master/Evidence/Validation/DQ adapters and explicit permissions, Export delivery/audit/revocation, unresolved methodology/DTO decisions. OD-ZC02-1–6 stay OPEN; no implicit mappings.
+- Cleanup verified: zero fwi_demo_test schema remnants; 10 owned browser schemas cleaned; temporary TLS keys/certs removed; no trust-store or dev DB change. Existing deprecation/Windows shutdown/jsdom navigation warnings remain. CP11-B staging/commit needs separate Owner approval; no independent delta review claimed.
+
+## Historical handoff retained (superseded by current checkpoint status above)
+
 # FWI AI Handoff — FWI-SEC-01D (uncommitted working branch)
 - **Current D delivery:** Owner-authorized temporary loopback TLS and reviewed UX candidates integrated; HEAD remains `e3d4cac3a8bd3eb640d421b5c3f27351d11115dc`, branch `codex/fwi-sec-01b-1`. Exact delta, commands and risks: `docs/backend/FWI-SEC-01D.md`. All S1/C work preserved; no staging/commit/push/PR/merge/deploy.
 - **Browser actual:** installed Windows Chrome / Playwright, real HTTPS React/Vite -> FastAPI -> PostgreSQL 18.6, final 10 PASS, 0 FAIL/SKIP/flaky, workers=1/retries=0. Includes W-20–W-25, revoked/expired session, CSRF, registered UNCONFIRMED intent, same-principal distinct sessions, cross-actor/site/multi-tab/delayed GET privacy. No automatic domain POST replay.

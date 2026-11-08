@@ -8,6 +8,10 @@ const NAV_ITEMS = [
   { to: "/capture", label: "Capture Cepat" },
   { to: "/review", label: "Pratinjau Review & Audit" },
   { to: "/export", label: "Pratinjau Ekspor CSV" },
+  { to: "/demo/data-quality", label: "Mutu Data (fixture)" },
+  { to: "/demo/master-data", label: "Master Data (fixture)" },
+  { to: "/demo/evidence", label: "Bukti (fixture)" },
+  { to: "/demo/export", label: "Ekspor (belum tersedia)" },
   { to: "/backend-demo", label: "Detail Backend (read-only)" },
   { to: "/backend-demo/capture", label: "Capture Backend (sintetis)" },
 ];
@@ -16,6 +20,8 @@ export default function AppLayout() {
   const location = useLocation();
   const backendMode = location.pathname.startsWith("/backend-demo");
   const backendCapture = location.pathname.startsWith("/backend-demo/capture");
+  const fixtureMode = location.pathname.startsWith("/demo/");
+  const exportUnavailable = location.pathname === "/demo/export";
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
       <a
@@ -42,7 +48,8 @@ export default function AppLayout() {
             <p
               className="rounded border border-slate-200 px-2 py-1 text-xs text-slate-600"
             >
-              {backendCapture ? "Sumber: API backend sintetis (write demo)" : backendMode ? "Sumber: API backend (read-only)" : "Sumber: DemoStore in-memory"}
+              {backendCapture ? "Sumber: API backend sintetis (write demo)" : backendMode ? "Sumber: API backend (read-only)"
+                : exportUnavailable ? "Ekspor backend: belum tersedia" : fixtureMode ? "Sumber: fixture sintetis (read-only)" : "Sumber: DemoStore in-memory"}
             </p>
           </div>
           <nav aria-label="Navigasi utama" className="overflow-x-auto">
@@ -80,6 +87,8 @@ export default function AppLayout() {
         <p>
           {backendCapture ? "Capture melalui API FastAPI/PostgreSQL sintetis lokal. Tidak ada fallback ke DemoStore."
             : backendMode ? "Halaman ini membaca API FastAPI/PostgreSQL lokal. Kegagalan API tidak diganti data in-memory."
+            : exportUnavailable ? "Ekspor backend belum tersedia. Tidak ada permintaan ekspor atau unduhan berkas."
+            : fixtureMode ? "Fixture sintetis terpisah dari API backend dan DemoStore; bukan data tersimpan atau fallback saat backend gagal. Filter bukan otorisasi."
             : "Sumber DemoStore in-memory: data sementara di browser, direset saat reload; tidak disimpan ke backend."}
           {" "}Demo sintetis terisolasi; backend memerlukan sesi sintetis HTTPS. Evidence storage belum tersedia; dashboard/ledger in-memory tidak memakai sesi backend.
         </p>
