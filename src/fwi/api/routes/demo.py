@@ -1,14 +1,16 @@
-"""Demo-only routes; no authentication or production exposure authorized."""
+"""Authenticated synthetic demo routes; no production exposure authorized."""
 
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from fwi.api.schemas_demo import EventInput, EventOutput, MeasurementInput, MeasurementOutput
 from fwi.application import demo
+from fwi.application import security
+from fwi.api.routes.auth import authenticated, bind_context
 
-router = APIRouter(prefix='/demo/v0.1', tags=['synthetic demo'])
+router = APIRouter(prefix='/demo/v0.1', tags=['synthetic demo'], dependencies=[Depends(authenticated)])
 
 
 def invoke(request, operation, *args):
@@ -16,9 +18,12 @@ def invoke(request, operation, *args):
     if factory is None:
         raise HTTPException(503, 'demo database not configured')
     try:
-        return operation(factory, *args)
+        with security.protected(factory, request.cookies.get(security.SESSION_COOKIE),
+                request.headers.get('x-csrf-token'), write=request.method == 'POST') as access:
+            bind_context(request, access)
+            return operation(factory, *args, access=access, intent=request.headers.get('x-fwi-intent'))
     except demo.NotFound as exc:
-        raise HTTPException(404, str(exc)) from exc
+        raise HTTPException(404, 'not found') from exc
     except IntegrityError as exc:
         raise HTTPException(409, 'demo data conflicts with database constraints') from exc
     except ValueError as exc:

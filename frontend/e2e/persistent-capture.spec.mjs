@@ -1,6 +1,7 @@
 import { test as base, expect } from '@playwright/test';
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
+import { randomBytes } from 'node:crypto';
 
 const EVENT_PATH = '/demo/v0.1/events';
 const LONG = '0.123456789012345678901234567890123456789';
@@ -10,7 +11,11 @@ const test = base.extend({
     if (!ci && process.env.FWI_LOCAL_SYNTHETIC_DEMO !== '1') {
       throw new Error('Requires Linux CI or explicit local synthetic demo opt-in');
     }
-    const child = spawn('python', ['-u', '../scripts/browser_e2e_harness.py', 'serve'], { stdio: ['pipe', 'pipe', 'inherit'] });
+    const passwords = Object.fromEntries(['site_a_writer','site_a_reader','site_b_writer'].map(name => [name, randomBytes(32).toString('hex')]));
+    const credentials = Object.fromEntries(Object.entries(passwords).map(([name, value]) => ['FWI_BROWSER_' + name.toUpperCase(), value]));
+    const child = spawn('python', ['-u', '../scripts/browser_e2e_harness.py', 'serve'], {
+      stdio: ['pipe', 'pipe', 'inherit'], env: { ...process.env, ...credentials },
+    });
     const queue = [], readers = [];
     let exitError;
     const lines = createInterface({ input: child.stdout });
@@ -50,24 +55,28 @@ const test = base.extend({
       expect(identity.identity.database).toBe('fwi_demo_test');
       expect(identity.identity.version).toContain('PostgreSQL 18.');
       expect(identity.schema).toMatch(/^fwi_demo_test_[0-9a-f]{32}$/);
-      expect(identity.revision).toBe('demo_0001');
+      expect(identity.revision).toBe('auth_0002');
       const snapshot = () => send('snapshot');
       await testInfo.attach('isolated-postgresql-identity', { body: JSON.stringify(identity, null, 2), contentType: 'application/json' });
-      await use({ snapshot, identity });
+      const baseline = await snapshot();
+      await use({ snapshot, identity, baseline, passwords, expireSessions: () => send('expire_sessions'), revokeSessions: () => send('revoke_sessions') });
     } finally {
       try {
         if (identity?.ready && !exitError) {
-          await testInfo.attach('final-postgresql-evidence', { body: JSON.stringify(await send('snapshot'), null, 2), contentType: 'application/json' });
-          const cleanup = await send('stop');
-          expect(cleanup.closed).toBe(true);
-          expect(cleanup.cleanup_verified).toBe(true);
-          await testInfo.attach('guarded-cleanup', { body: JSON.stringify(cleanup, null, 2), contentType: 'application/json' });
+          try {
+            await testInfo.attach('final-postgresql-evidence', { body: JSON.stringify(await send('snapshot'), null, 2), contentType: 'application/json' });
+          } finally {
+            const cleanup = await send('stop');
+            expect(cleanup.closed).toBe(true);
+            expect(cleanup.cleanup_verified).toBe(true);
+            await testInfo.attach('guarded-cleanup', { body: JSON.stringify(cleanup, null, 2), contentType: 'application/json' });
+          }
         }
       } finally {
         child.stdin.end();
         if (!exitError) {
           await new Promise(resolve => {
-            const timer = setTimeout(() => { child.kill('SIGTERM'); resolve(); }, 3000);
+            const timer = setTimeout(() => { child.kill('SIGTERM'); resolve(); }, 20000);
             child.once('exit', () => { clearTimeout(timer); resolve(); });
           });
         }
@@ -76,6 +85,29 @@ const test = base.extend({
     }
   },
 });
+
+async function login(page, backend, name='site_a_writer') {
+  const network = [];
+  const inspect = response => { const path = new URL(response.url()).pathname;
+    if (path.startsWith('/auth/')) network.push({ path, status: response.status(),
+      bound: !!response.headers()['x-fwi-auth-context'], principal: !!response.headers()['x-fwi-principal'] }); };
+  page.on('response', inspect);
+  await page.goto('/backend-demo');
+  // Wait for initial Vite optimization/navigation and the first session check;
+  // never refill/replay a submitted credential or domain POST.
+  await page.waitForLoadState('networkidle');
+  await page.getByLabel('Akun sintetis').fill(name);
+  // Do not put the credential in a locator.fill call log on failure.
+  await page.getByLabel('Password', { exact: true }).evaluate((input, secret) => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, secret);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  }, backend.passwords[name]);
+  await page.getByRole('button', { name: 'Masuk', exact: true }).click();
+  try { await expect(page.getByLabel('Site berizin')).toBeVisible(); }
+  catch (error) { throw new Error(`Login failed; sanitized HTTP evidence: ${JSON.stringify(network)}; backend: ${JSON.stringify((await backend.snapshot()).auth_http)}`, { cause: error }); }
+  finally { page.off('response', inspect); }
+}
+test.beforeEach(async ({ page, backend }) => { await login(page, backend); backend.baseline = await backend.snapshot(); });
 
 async function createEvent(page) {
   await page.goto('/backend-demo/capture');
@@ -136,7 +168,11 @@ async function loseAcknowledgement(page, backend, operation) {
       expect(committed.data[table].filter(record => record[idKey] === saved[idKey])).toHaveLength(1);
       expect(committed.data.audit_events.filter(record => record.entity_id === saved[idKey] && record.entity_type === table && record.action === 'created')).toHaveLength(1);
       expect(committed.posts.filter(p => p.path === path)).toEqual([{ path, status: 201 }]);
-      await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ detail: 'test-only lost acknowledgement after verified commit' }) });
+      await route.fulfill({ status: 503, headers: {
+        'content-type': 'application/json', 'cache-control': 'no-store',
+        'x-fwi-principal': response.headers()['x-fwi-principal'],
+        'x-fwi-auth-context': response.headers()['x-fwi-auth-context'],
+      }, body: JSON.stringify({ detail: 'test-only lost acknowledgement after verified commit' }) });
       resolveProof({ saved, committed, path, browserPosts });
     } catch (error) {
       await route.fulfill({ status: 503, contentType: 'application/json', body: '{}' }).catch(() => {});
@@ -155,13 +191,13 @@ test('W-20: committed event, lost acknowledgement, UNKNOWN and refresh never rep
   await expect(page.getByRole('heading', { name: /UNKNOWN/ })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Simpan event backend', exact: true })).toBeDisabled();
   await page.reload();
-  await expect(page.getByRole('heading', { name: /UNKNOWN/ })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Simpan event backend', exact: true })).toBeDisabled();
+  await expect(page.getByRole('link', { name: 'Buka hasil terkonfirmasi (GET)' })).toBeVisible();
+  await expect(page.getByText(/Hasil commit terkonfirmasi oleh server/)).toBeVisible();
   await page.waitForTimeout(1000); // observation window only; never retries a POST
   const after = await backend.snapshot();
   expect(loss.postCount()).toBe(1);
   expect(after.posts).toHaveLength(1);
-  expect(after.counts).toMatchObject({ waste_events: 1, measurements: 0, audit_events: 3 });
+  expect(after.counts).toMatchObject({ waste_events: 1, measurements: 0, audit_events: backend.baseline.counts.audit_events + 1 });
   expect(after.sha256).toBe(proof.committed.sha256);
   await testInfo.attach('W-20-verified-commit-no-replay', { body: JSON.stringify({ ...proof, after }, null, 2), contentType: 'application/json' });
 });
@@ -173,12 +209,12 @@ test('W-21: committed measurement, lost acknowledgement, same-event UNKNOWN surv
   const [, proof] = await Promise.all([page.getByRole('button', { name: 'Simpan measurement ke event ini', exact: true }).click(), loss.proof]);
   await expect(page.getByRole('heading', { name: /UNKNOWN/ })).toBeVisible();
   await page.reload();
-  await expect(page.getByRole('button', { name: 'Simpan measurement ke event ini', exact: true })).toBeDisabled();
+  await expect(page.getByRole('link', { name: 'Buka hasil terkonfirmasi (GET)' })).toHaveCount(2);
   await page.waitForTimeout(1000);
   const after = await backend.snapshot();
   expect(loss.postCount()).toBe(1);
   expect(after.posts).toHaveLength(2);
-  expect(after.counts).toMatchObject({ waste_events: 1, measurements: 1, audit_events: 4 });
+  expect(after.counts).toMatchObject({ waste_events: 1, measurements: 1, audit_events: backend.baseline.counts.audit_events + 2 });
   expect(after.data.measurements[0].event_id).toBe(eventId);
   expect(after.sha256).toBe(proof.committed.sha256);
   await testInfo.attach('W-21-verified-commit-no-replay', { body: JSON.stringify({ ...proof, after }, null, 2), contentType: 'application/json' });
@@ -189,11 +225,11 @@ test('W-22: reject inconsistent mass, correct it on the same event without dupli
   await fillMeasurement(page, { gross: '0.4', tare: '0.1', net: '9' });
   await submitMeasurement(page, eventId, 422);
   await expect(page.getByText(/Server menolak operasi \(HTTP 422\)/)).toBeVisible();
-  expect((await backend.snapshot()).counts).toMatchObject({ waste_events: 1, measurements: 0, audit_events: 3 });
+  expect((await backend.snapshot()).counts).toMatchObject({ waste_events: 1, measurements: 0, audit_events: backend.baseline.counts.audit_events + 1 });
   await page.getByLabel('net (kg)', { exact: true }).fill('0.3');
   await submitMeasurement(page, eventId);
   const after = await backend.snapshot();
-  expect(after.counts).toMatchObject({ waste_events: 1, measurements: 1, audit_events: 4 });
+  expect(after.counts).toMatchObject({ waste_events: 1, measurements: 1, audit_events: backend.baseline.counts.audit_events + 2 });
   expect(after.data.measurements[0].event_id).toBe(eventId);
   expect(after.posts.map(p => p.status)).toEqual([201, 422, 201]);
 });
@@ -210,7 +246,8 @@ test('W-23: read-after-write and direct refresh preserve UUID and never submit a
   expect(new URL(page.url()).searchParams.get('event')).toBe(eventId);
   await page.getByRole('link', { name: 'Detail dan riwayat read-only', exact: true }).click();
   await expect(page.getByRole('article')).toHaveCount(1);
-  await expect(page.getByText(`${LONG} kg`, { exact: true })).toHaveCount(2);
+  await expect(page.getByLabel(`Net: ${LONG} kg`, { exact: true })).toHaveCount(1);
+  await expect(page.getByLabel(`Gross: ${LONG} kg`, { exact: true })).toHaveCount(1);
   await page.reload();
   await expect(page.getByRole('article')).toHaveCount(1);
   await page.getByRole('link', { name: 'Kembali: tambah pengukuran pada event ini' }).click();
@@ -231,7 +268,7 @@ test('W-24: Decimal, null/zero and all five statuses remain traceable on one eve
     await expect(page.getByRole('button', { name: 'Simpan measurement ke event ini', exact: true })).toBeEnabled();
   }
   const before = await backend.snapshot();
-  expect(before.counts).toMatchObject({ waste_events: 1, measurements: 5, audit_events: 8 });
+  expect(before.counts).toMatchObject({ waste_events: 1, measurements: 5, audit_events: backend.baseline.counts.audit_events + 6 });
   const byStatus = Object.fromEntries(before.data.measurements.map(m => [m.observation_status, m]));
   expect(byStatus.observed.net).toBe(LONG);
   expect(byStatus.estimated.net).toBe(LONG);
@@ -242,7 +279,7 @@ test('W-24: Decimal, null/zero and all five statuses remain traceable on one eve
   expect(before.data.measurements.every(m => m.event_id === eventId && m.mass_basis === 'as_served' && m.measurement_method === 'synthetic_ci_scale')).toBe(true);
   await page.getByRole('link', { name: 'Detail dan riwayat read-only', exact: true }).click();
   await expect(page.getByRole('article')).toHaveCount(5);
-  await expect(page.getByText('Tidak tersedia (null)', { exact: true })).toHaveCount(6);
+  await expect(page.getByLabel(/: Tidak tersedia \(null\)/)).toHaveCount(6);
   await expect(page.getByText('Estimasi (estimated)', { exact: true })).toBeVisible();
   await expect(page.getByText('Nol terukur (measured_zero)', { exact: true })).toBeVisible();
   await expect(page.getByText(/Dua GET dibaca terpisah, bukan snapshot atomik/)).toBeVisible();
@@ -260,9 +297,119 @@ test('W-25: browser HTTP boundary denies foreign origin, invalid content and una
     expect((await page.request.fetch(path, { method, maxRetries: 0 })).status()).toBe(405);
   }
   expect((await page.request.post(EVENT_PATH, { headers: { 'content-type': 'application/json', origin: 'http://foreign.invalid' }, data: '{}', maxRetries: 0 })).status()).toBe(403);
-  expect((await page.request.post(EVENT_PATH, { headers: { 'content-type': 'text/plain' }, data: '{}', maxRetries: 0 })).status()).toBe(415);
+  expect((await page.request.post(EVENT_PATH, { headers: { origin: 'https://127.0.0.1:5173', 'content-type': 'text/plain' }, data: '{}', maxRetries: 0 })).status()).toBe(415);
   expect((await page.request.post(path, { data: {}, maxRetries: 0 })).status()).toBe(404);
   const after = await backend.snapshot();
   expect(after.posts).toHaveLength(0);
-  expect(after.counts).toMatchObject({ waste_events: 0, measurements: 0, audit_events: 2 });
+  expect(after.counts).toMatchObject({ waste_events: 0, measurements: 0, audit_events: backend.baseline.counts.audit_events });
+});
+
+test('SEC-C: CSRF denial, cross-actor privacy, IDOR and expired session fail closed', async ({ page, backend }) => {
+  const eventId = await createEvent(page);
+  const before = await backend.snapshot();
+  expect((await page.request.post('/auth/intents', { headers: { origin: 'https://127.0.0.1:5173',
+    'x-csrf-token': 'incorrect' }, data: { site_id: '22222222-2222-4222-8222-222222222222', kind: 'event' }, maxRetries: 0 })).status()).toBe(403);
+  expect((await backend.snapshot()).sha256).toBe(before.sha256);
+  await page.getByRole('button', { name: 'Keluar', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Masuk backend sintetis' })).toBeVisible();
+  await login(page, backend, 'site_b_writer');
+  await expect(page.getByRole('main')).not.toContainText(eventId);
+  await page.goto(`/backend-demo/events/${eventId}`);
+  await expect(page.getByRole('alert')).toContainText('404');
+  await expect(page.getByRole('article')).toHaveCount(0);
+  await backend.expireSessions();
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Masuk backend sintetis' })).toBeVisible();
+  expect((await backend.snapshot()).counts.waste_events).toBe(1);
+});
+
+test('SEC-D1: Secure cookies, revoked session and unavailable CSRF never authorize a write', async ({ page, backend, context }) => {
+  const cookies = await context.cookies();
+  const session = cookies.find(c => c.name === '__Host-fwi-session');
+  expect(session && { secure: session.secure, httpOnly: session.httpOnly, sameSite: session.sameSite, path: session.path })
+    .toEqual({ secure: true, httpOnly: true, sameSite: 'Strict', path: '/' });
+  const before = await backend.snapshot();
+  expect((await page.request.post('/auth/intents', { headers: { origin: 'https://127.0.0.1:5173' },
+    data: { site_id: '22222222-2222-4222-8222-222222222222', kind: 'event' }, maxRetries: 0 })).status()).toBe(403);
+  await backend.revokeSessions();
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Masuk backend sintetis' })).toBeVisible();
+  expect((await page.request.get('/auth/intents', { headers: { origin: 'https://127.0.0.1:5173' } })).status()).toBe(401);
+  const after = await backend.snapshot();
+  expect(after.posts).toHaveLength(0);
+  expect(after.counts.waste_events).toBe(before.counts.waste_events);
+  expect(after.intents).toHaveLength(0);
+});
+
+test('SEC-D2: registered but undispatched intent remains private UNCONFIRMED across refresh and actor change', async ({ page, backend }) => {
+  const registration = await page.evaluate(async () => {
+    const session = await (await fetch('/auth/session')).json();
+    const response = await fetch('/auth/intents', { method: 'POST', headers: {
+      'Content-Type': 'application/json', 'X-CSRF-Token': session.csrf_token },
+      body: JSON.stringify({ site_id: session.sites[0].site_id, kind: 'event', event_id: null }) });
+    return { status: response.status, id: (await response.json()).intent_id };
+  });
+  expect(registration.status).toBe(201);
+  await page.goto('/backend-demo/capture');
+  await expect(page.getByText(/UNCONFIRMED:/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Simpan event backend', exact: true })).toBeDisabled();
+  await page.reload();
+  await expect(page.getByText(/UNCONFIRMED:/)).toBeVisible();
+  expect((await backend.snapshot()).intents).toEqual([expect.objectContaining({ intent_id: registration.id, state: 'registered', result_id: null })]);
+  await page.getByRole('button', { name: 'Keluar', exact: true }).click();
+  await login(page, backend, 'site_b_writer');
+  await expect(page.getByText(/UNCONFIRMED:/)).toHaveCount(0);
+  expect(await (await page.request.get('/auth/intents', { headers: { origin: 'https://127.0.0.1:5173' } })).json()).toEqual([]);
+  const after = await backend.snapshot();
+  expect(after.intents).toEqual([expect.objectContaining({ intent_id: registration.id, state: 'registered', result_id: null })]);
+  expect(after.posts).toHaveLength(0);
+});
+
+test('SEC-D3: same-principal new session, cross-tab actor switch and delayed private GET stay isolated', async ({ page, backend, context }) => {
+  const eventId = await createEvent(page);
+  await fillMeasurement(page); await submitMeasurement(page, eventId);
+  await page.goto(`/backend-demo/events/${eventId}`);
+  await expect(page.getByRole('article')).toHaveCount(1);
+  const reference = () => page.evaluate(async () => {
+    const value = await (await fetch('/auth/session')).json();
+    return { principal: value.principal_id, session: value.auth_context_id };
+  });
+  const first = await reference();
+  let release, captured;
+  const delayed = new Promise(resolve => { captured = resolve; });
+  const hold = new Promise(resolve => { release = resolve; });
+  await page.route(`**${EVENT_PATH}/${eventId}/measurements`, async route => {
+    const response = await route.fetch({ maxRetries: 0 });
+    captured(); await hold;
+    await route.fulfill({ response }).catch(() => {}); // aborted old request must stay invisible
+  }, { times: 1 });
+  await page.getByRole('button', { name: 'Muat ulang / coba lagi' }).click();
+  await delayed;
+  const other = await context.newPage();
+  try {
+    await other.goto('/backend-demo');
+    await expect(other.getByLabel('Site berizin')).toBeVisible();
+    await other.getByRole('button', { name: 'Keluar', exact: true }).click();
+    await login(other, backend); // same principal, a distinct backend login session
+    const second = await other.evaluate(async () => {
+      const value = await (await fetch('/auth/session')).json();
+      return { principal: value.principal_id, session: value.auth_context_id };
+    });
+    expect(second.principal).toBe(first.principal); expect(second.session).not.toBe(first.session);
+    await other.getByRole('button', { name: 'Keluar', exact: true }).click();
+    await login(other, backend, 'site_b_writer');
+    release();
+    await page.bringToFront();
+    await expect(page.getByRole('article')).toHaveCount(0);
+    await expect(page.getByText('FWI-INT-005 Linux Chromium synthetic fixture', { exact: true })).toHaveCount(0);
+    await expect(page.getByRole('alert')).toContainText('404');
+    const missing = await page.request.get(`${EVENT_PATH}/33333333-3333-4333-8333-333333333333`, { headers: { origin: 'https://127.0.0.1:5173' } });
+    const foreign = await page.request.get(`${EVENT_PATH}/${eventId}`, { headers: { origin: 'https://127.0.0.1:5173' } });
+    expect(missing.status()).toBe(404); expect(foreign.status()).toBe(404); expect(await missing.json()).toEqual(await foreign.json());
+    expect(await (await page.request.get('/auth/intents', { headers: { origin: 'https://127.0.0.1:5173' } })).json()).toEqual([]);
+    const after = await backend.snapshot();
+    expect(after.posts).toHaveLength(2); expect(after.counts).toMatchObject({ waste_events: 1, measurements: 1 });
+    expect(after.operations.filter(o => o.path === '/auth/intents' || o.path.startsWith(EVENT_PATH)).map(o => o.path))
+      .toEqual(['/auth/intents', EVENT_PATH, '/auth/intents', `${EVENT_PATH}/${eventId}/measurements`]);
+  } finally { release(); await other.close(); }
 });

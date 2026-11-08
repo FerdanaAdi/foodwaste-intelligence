@@ -1,12 +1,14 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { BACKEND_MASS_BASES, BACKEND_STATUSES, isUUID, type BackendEvent, type BackendMeasurement } from "@/backend/contract";
 import { readBackendEvent, readBackendMeasurements } from "@/backend/client";
 import {
-  SYNTHETIC_ORG_ID, SYNTHETIC_SITE_ID, clearCaptureJournal, createBackendEvent, createBackendMeasurement,
+  SYNTHETIC_ORG_ID, clearCaptureJournal, createBackendEvent, createBackendMeasurement,
   eventErrors, measurementErrors, readCaptureJournal, saveCaptureJournal,
   type CaptureJournal, type EventInput, type MeasurementInput,
 } from "@/backend/write";
+import { authSnapshot, permits, subscribeAuth } from '@/backend/auth';
+import { UncertainResultState } from '@/components/states/DisplayStates';
 
 const field = "w-full rounded border border-slate-300 bg-white p-2";
 const initialMeasurement: MeasurementInput = {
@@ -16,13 +18,14 @@ const initialMeasurement: MeasurementInput = {
 type Feedback = { kind: "error" | "success" | "unknown"; message: string } | null;
 
 export default function BackendCapturePage() {
+  const auth = useSyncExternalStore(subscribeAuth, authSnapshot);
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const routeId = params.get("event") || "";
   const [eventId, setEventId] = useState<string | null>(null);
   const [confirmedEvent, setConfirmedEvent] = useState<BackendEvent | null>(null);
   const [history, setHistory] = useState<BackendMeasurement[] | null>(null);
-  const [eventInput, setEventInput] = useState<EventInput>({ organization_id: SYNTHETIC_ORG_ID, site_id: SYNTHETIC_SITE_ID, event_type: "" as EventInput["event_type"], occurred_at: "" });
+  const [eventInput, setEventInput] = useState<EventInput>({ organization_id: SYNTHETIC_ORG_ID, site_id: authSnapshot().site, event_type: "" as EventInput["event_type"], occurred_at: "" });
   const [measurement, setMeasurement] = useState<MeasurementInput>(initialMeasurement);
   const [feedback, setFeedback] = useState<Feedback>(null);
   const [readFeedback, setReadFeedback] = useState<string | null>(null);
@@ -32,7 +35,7 @@ export default function BackendCapturePage() {
   const [knownInput, setKnownInput] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [attempt, setAttempt] = useState(0);
-  const locked = journal !== null;
+  const locked = journal !== null || !!auth.intents?.some(i => i.state === 'registered');
 
   // This only warns; journal + no-automatic-retry is the actual integrity control.
   useEffect(() => {
@@ -162,17 +165,11 @@ export default function BackendCapturePage() {
       <Link className="text-sky-700 underline" to={eventId ? `/backend-demo/events/${eventId}` : "/backend-demo"}>Buka detail backend (read-only)</Link>
     </header>
 
-    {locked && !busy && <section role="alert" className="rounded border-2 border-amber-600 bg-amber-50 p-4 space-y-3">
+    {locked && !busy && <section className="rounded border-2 border-amber-600 bg-amber-50 p-4 space-y-3">
       <h2 className="font-semibold">Hasil penyimpanan belum dapat dipastikan (UNKNOWN)</h2>
-      <p>POST {journal.operation} mungkin telah commit. Tidak ada retry otomatis atau tombol kirim ulang. Jangan membuat record baru sebelum investigasi.</p>
-      {journal.eventId && <Link className="text-sky-700 underline" to={`/backend-demo/events/${journal.eventId}`}>Periksa riwayat event {journal.eventId} (GET)</Link>}
-      {!journal.eventId && <p>UUID event belum diterima. Tidak ada API pencarian berdasarkan request; operator berwenang harus memeriksa database sebelum mencoba lagi.</p>}
-      <p className="text-sm">Jika recovery sudah dilakukan secara independen, konfirmasi secara sadar untuk membuka input lagi. Ini bukan bukti exactly-once.</p>
-      <button type="button" className="rounded border px-3 py-2" disabled={busy} onClick={() => {
-        if (!window.confirm("Konfirmasi: hasil POST sudah diperiksa secara independen. Melepas kunci tidak membuktikan record gagal/berhasil. Lanjutkan?")) return;
-        try { updateJournal(null); setFeedback(null); }
-        catch { setReadFeedback("Journal sesi tidak dapat dibersihkan; input tetap dikunci."); }
-      }}>Saya sudah memeriksa dan memahami risiko; buka kunci</button>
+      <UncertainResultState detail={`POST ${journal?.operation ?? 'privat'} mungkin telah commit. Tidak ada retry otomatis atau tombol kirim ulang. Jangan membuat record baru sebelum investigasi.`} />
+      {journal?.eventId && <Link className="text-sky-700 underline" to={`/backend-demo/events/${journal.eventId}`}>Periksa riwayat event {journal.eventId} (GET)</Link>}
+      <p>Gunakan pemulihan intent privat di atas. Intent registered tanpa hasil tetap UNCONFIRMED; tidak ada tombol replay atau buka kunci tanpa bukti server.</p>
     </section>}
     {feedback && <p role={feedback.kind === "success" ? "status" : "alert"} className="rounded border bg-white p-3">{feedback.message}</p>}
     {busy && <p role="status">Sedang menyimpan ke backend… Tunggu hasilnya; jangan kirim ulang atau tutup halaman.</p>}
@@ -183,11 +180,11 @@ export default function BackendCapturePage() {
       <button type="submit" disabled={busy} className="rounded border px-4 py-2">Baca event dari backend (GET saja)</button>
     </form>
 
-    {!eventId && !routeId && <form onSubmit={e => { void submitEvent(e); }} className="rounded border bg-white p-4 space-y-4" noValidate>
+    {!eventId && !routeId && permits('event.create') && <form onSubmit={e => { void submitEvent(e); }} className="rounded border bg-white p-4 space-y-4" noValidate>
       <h2 className="text-lg font-semibold">1. Buat event sintetis</h2>
       <p className="text-sm">Fixture backend hanya tersedia bila sudah disiapkan pada database uji yang diotorisasi. Pilihan ini bukan identitas site DemoStore.</p>
       <label className="block">Organisasi/site fixture sintetis
-        <select className={field} value={SYNTHETIC_SITE_ID} disabled><option value={SYNTHETIC_SITE_ID}>{SYNTHETIC_ORG_ID} / {SYNTHETIC_SITE_ID}</option></select>
+        <select className={field} value={eventInput.site_id} disabled><option value={eventInput.site_id}>{SYNTHETIC_ORG_ID} / {eventInput.site_id}</option></select>
       </label>
       <label className="block">Jenis event backend provisional
         <select className={field} value={eventInput.event_type} onChange={e => setEventInput(v => ({ ...v, event_type: e.target.value as EventInput["event_type"] }))}>
@@ -211,7 +208,7 @@ export default function BackendCapturePage() {
       {history && <p role="status">Riwayat backend berhasil dibaca: {history.length} measurement (tanpa agregasi atau pilihan kanonik).</p>}
     </section>}
 
-    {eventId && <form onSubmit={e => { void submitMeasurement(e); }} noValidate className="rounded border bg-white p-4 space-y-4">
+    {eventId && permits('measurement.create') && <form onSubmit={e => { void submitMeasurement(e); }} noValidate className="rounded border bg-white p-4 space-y-4">
       <h2 className="text-lg font-semibold">2. Tambah measurement pada event yang sama</h2>
       <p className="text-sm">Status: observed = teramati, estimated = estimasi, measured_zero = nol terukur, missing = nilai tidak tersedia, not_measured = tidak diukur. Missing/tidak diukur menyimpan null, bukan 0 kg.</p>
       <label className="block">Observation status

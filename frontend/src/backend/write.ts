@@ -1,6 +1,7 @@
 /** Synthetic local development write client. Never retries a POST. */
 import { BACKEND_MASS_BASES, BACKEND_STATUSES, isAwareTimestamp, isUUID, parseEvent, parseMeasurements } from "./contract";
 import type { BackendEvent, BackendMeasurement } from "./contract";
+import { assertCurrent, authSnapshot, permits, protectedJson } from './auth';
 
 export const SYNTHETIC_ORG_ID = "11111111-1111-4111-8111-111111111111";
 export const SYNTHETIC_SITE_ID = "22222222-2222-4222-8222-222222222222";
@@ -43,8 +44,8 @@ function meaningful(value: string) { return value.trim().length > 0 && value.len
 
 export function eventErrors(value: EventInput): Record<string, string> {
   const errors: Record<string, string> = {};
-  if (value.organization_id !== SYNTHETIC_ORG_ID || value.site_id !== SYNTHETIC_SITE_ID)
-    errors.site = "Hanya pasangan organisasi/site fixture sintetis yang didukung.";
+  if (!isUUID(value.organization_id) || !isUUID(value.site_id))
+    errors.site = "UUID organisasi/site sintetis wajib valid; izin tetap diperiksa backend.";
   if (value.event_type !== "at_risk_surplus" && value.event_type !== "actual_loss_discard")
     errors.event_type = "Pilih jenis event backend demo.";
   if (!isAwareTimestamp(value.occurred_at)) errors.occurred_at = "Gunakan waktu ISO dengan zona waktu, misalnya 2026-11-06T12:00:00+08:00.";
@@ -75,14 +76,26 @@ export function measurementErrors(value: MeasurementInput): Record<string, strin
 /** A rejected response means the server explicitly refused the request without creating a record.
  *  All ambiguous conditions (including 5xx and malformed 201) remain UNKNOWN. */
 async function postOnce<T>(path: string, body: EventInput | MeasurementInput, parse: (value: unknown) => T): Promise<WriteResult<T>> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), WRITE_TIMEOUT_MS);
+  const kind = path.endsWith('/measurements') ? 'measurement' : 'event';
+  const auth = authSnapshot();
+  if (!permits(kind + '.create') || ('site_id' in body && body.site_id !== auth.site))
+    return { kind: 'rejected', message: 'Tidak ada izin untuk operasi/site aktif.' };
   try {
-    const response = await fetch(path, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body), signal: controller.signal, credentials: "omit",
-      redirect: "error", cache: "no-store",
+    saveCaptureJournal({ operation: kind, eventId: null, state: 'pending' });
+    const registration = await protectedJson('/auth/intents', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+        kind, site_id: auth.site, event_id: kind === 'measurement' ? path.split('/')[4] : null,
+      }),
     });
+    assertCurrent(auth);
+    if (registration.response.status !== 201) return { kind: 'unknown', message: 'Registrasi intent belum terkonfirmasi; domain POST tidak dikirim.' };
+    const intent = registration.value as { intent_id: string; state: string };
+    if (!intent || !isUUID(intent.intent_id) || intent.state !== 'registered') throw Error('invalid intent response');
+    sessionStorage.setItem(CAPTURE_JOURNAL_KEY, intent.intent_id);
+    const { response, value: raw } = await protectedJson(path, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-FWI-Intent': intent.intent_id }, body: JSON.stringify(body),
+    });
+    assertCurrent(auth);
     if (response.status === 422 || response.status === 400 || response.status === 404) {
       return { kind: "rejected", message: `Server menolak operasi (HTTP ${response.status}). Periksa input atau konteks fixture.` };
     }
@@ -90,12 +103,11 @@ async function postOnce<T>(path: string, body: EventInput | MeasurementInput, pa
       return { kind: "unknown", message: `HTTP ${response.status}; hasil commit tidak dapat dipastikan. Jangan kirim ulang.` };
     }
     // Even 201 is UNKNOWN when the response cannot be parsed and associated with the request.
-    let raw: unknown;
-    try { raw = await response.json() as unknown; return { kind: "saved", value: parse(raw) }; }
+    try { return { kind: "saved", value: parse(raw) }; }
     catch { return { kind: "unknown", message: "Respons 201 tidak valid; hasil commit belum dapat dipastikan." }; }
   } catch {
     return { kind: "unknown", message: "Respons POST tidak diterima (jaringan/timeout); mungkin sudah commit. Jangan kirim ulang." };
-  } finally { clearTimeout(timeout); }
+  }
 }
 
 export async function createBackendEvent(body: EventInput): Promise<WriteResult<BackendEvent>> {
@@ -128,19 +140,14 @@ export type CaptureJournal = { operation: "event" | "measurement"; eventId: stri
 /** The journal intentionally has no request replay operation. PENDING after a reload is UNKNOWN. */
 export function readCaptureJournal(): CaptureJournal | null {
   try {
-    const raw = sessionStorage.getItem(CAPTURE_JOURNAL_KEY);
-    if (!raw) return null;
-    const value: unknown = JSON.parse(raw);
-    if (!value || typeof value !== "object") return { operation: "event", eventId: null, state: "unknown" };
-    const obj = value as Record<string, unknown>;
-    if ((obj.operation !== "event" && obj.operation !== "measurement") ||
-        (obj.eventId !== null && (typeof obj.eventId !== "string" || !isUUID(obj.eventId))) ||
-        (obj.state !== "pending" && obj.state !== "unknown"))
-      return { operation: "event", eventId: null, state: "unknown" };
-    return { operation: obj.operation, eventId: obj.eventId as string | null, state: "unknown" };
+    // Ownership comes from authorized recovery, never from a browser marker.
+    if (authSnapshot().intents?.some(i => i.state === 'registered'))
+      return { operation: 'event', eventId: null, state: 'unknown' };
+    return null;
   } catch { return { operation: "event", eventId: null, state: "unknown" }; }
 }
-export function saveCaptureJournal(journal: CaptureJournal): void {
-  sessionStorage.setItem(CAPTURE_JOURNAL_KEY, JSON.stringify(journal));
+export function saveCaptureJournal(_journal: CaptureJournal): void {
+  // Non-authorizing opaque marker only. Never store actor/site/event/payload/secrets.
+  if (!sessionStorage.getItem(CAPTURE_JOURNAL_KEY)) sessionStorage.setItem(CAPTURE_JOURNAL_KEY, crypto.randomUUID());
 }
 export function clearCaptureJournal(): void { sessionStorage.removeItem(CAPTURE_JOURNAL_KEY); }

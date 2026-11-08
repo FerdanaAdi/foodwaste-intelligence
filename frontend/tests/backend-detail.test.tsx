@@ -1,6 +1,7 @@
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { domainCalls, installDomainFetch, prepareSession } from './backend-auth-fixture';
 import { MemoryRouter, useNavigate } from "react-router";
 import App from "@/App";
 import fixture from "./fixtures/backend-detail.json";
@@ -14,8 +15,10 @@ function mockAPI(records: unknown = [fixture.measurement]) {
   return vi.stubGlobal("fetch", vi.fn(async (url: string) => response(url.endsWith("/measurements") ? records : fixture.event)));
 }
 function mount(path = `/backend-demo/events/${id}`) {
+  installDomainFetch(fetch);
   return render(<MemoryRouter initialEntries={[path]}><App /></MemoryRouter>);
 }
+beforeEach(async () => { sessionStorage.clear(); await prepareSession(); });
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 describe("backend detail read-only route", () => {
   it("returns to measurement capture with the same event UUID using only GET", async () => {
@@ -26,7 +29,7 @@ describe("backend detail read-only route", () => {
     await screen.findByText(/Event dikonfirmasi:/);
     expect(screen.getByRole('button', { name: 'Simpan measurement ke event ini' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Simpan event backend' })).not.toBeInTheDocument();
-    for (const call of vi.mocked(fetch).mock.calls) expect(call[1]?.method).toBe('GET');
+    for (const call of domainCalls()) expect(call[1]?.method).toBe('GET');
   });
   it("renders every observation, exact decimal/null and separate timestamps without totals", async () => {
     mockAPI(["observed", "estimated", "missing", "measured_zero", "not_measured"].map((observation_status, index) => ({
@@ -38,17 +41,17 @@ describe("backend detail read-only route", () => {
     expect(screen.getByText("Memuat event backend…")).toBeInTheDocument();
     await screen.findByText("Estimasi (estimated)");
     expect(screen.getAllByRole("article")).toHaveLength(5);
-    expect(screen.getAllByText(`${fixture.measurement.net} kg`).length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Tidak tersedia (null)")).toHaveLength(6);
-    expect(screen.getAllByText("0.4 kg")).toHaveLength(2);
-    expect(screen.getAllByText("0 kg")).toHaveLength(3);
+    expect(screen.getAllByLabelText(`Net: ${fixture.measurement.net} kg`)).toHaveLength(2);
+    expect(screen.getAllByLabelText(/: Tidak tersedia \(null\)/)).toHaveLength(6);
+    expect(screen.getAllByLabelText(/: 0\.4 kg$/)).toHaveLength(2);
+    expect(screen.getAllByLabelText(/: 0 kg$/)).toHaveLength(3);
     expect(screen.getByText(fixture.event.occurred_at)).toBeInTheDocument();
     expect(screen.getByText(fixture.event.recorded_at)).toBeInTheDocument();
     expect(screen.getAllByText("as_served")).toHaveLength(5);
     expect(screen.queryByText("Ditimbang")).not.toBeInTheDocument();
     expect(screen.queryByText("Belum divalidasi")).not.toBeInTheDocument();
     expect(screen.queryByText(/total massa/i)).not.toBeInTheDocument();
-    for (const call of vi.mocked(fetch).mock.calls) expect(call[1]?.method).toBe("GET");
+    for (const call of domainCalls()) expect(call[1]?.method).toBe("GET");
   });
   it("refresh preserves UUID and in-memory ledger remains uncontaminated", async () => {
     const user = userEvent.setup();
@@ -61,10 +64,10 @@ describe("backend detail read-only route", () => {
     expect(screen.getByText("EVT-DEMO-2026-0001")).toBeInTheDocument();
     expect(screen.queryByText(id)).not.toBeInTheDocument();
   });
-  it("invalid UUID never calls API", () => {
+  it("invalid UUID never calls API", async () => {
     mockAPI(); mount("/backend-demo/events/not-a-uuid");
-    expect(screen.getByRole("alert")).toHaveTextContent("harus berupa UUID");
-    expect(fetch).not.toHaveBeenCalled();
+    expect(await screen.findByRole("alert")).toHaveTextContent("harus berupa UUID");
+    expect(domainCalls()).toHaveLength(0);
   });
   it("empty success differs from failed history", async () => {
     mockAPI([]); mount();
@@ -95,6 +98,7 @@ describe("backend detail read-only route", () => {
     const view = mount();
     expect(await screen.findByRole("alert")).toHaveTextContent("Koneksi jaringan backend gagal");
     view.unmount();
+    await prepareSession();
     vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => { throw new SyntaxError("private raw response"); } })));
     mount();
     expect(await screen.findByRole("alert")).toHaveTextContent("bukan JSON");
@@ -103,6 +107,7 @@ describe("backend detail read-only route", () => {
   it("times out without accepting a late result", async () => {
     vi.useFakeTimers();
     vi.stubGlobal("fetch", vi.fn(() => new Promise(() => {})));
+    installDomainFetch(fetch);
     const result = readBackendEvent(id, new AbortController().signal);
     const assertion = expect(result).rejects.toThrow("Batas waktu");
     await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS);
@@ -119,6 +124,7 @@ describe("backend detail read-only route", () => {
       const navigate = useNavigate();
       return <button onClick={() => navigate(`/backend-demo/events/${secondId}`)}>Switch event</button>;
     }
+    installDomainFetch(fetch);
     render(<MemoryRouter initialEntries={[`/backend-demo/events/${id}`]}><Switch /><App /></MemoryRouter>);
     await userEvent.setup().click(screen.getByRole("button", { name: "Switch event" }));
     await screen.findByText(secondId);

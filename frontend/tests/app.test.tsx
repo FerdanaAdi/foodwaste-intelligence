@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
@@ -11,6 +11,7 @@ function renderApp() {
     </MemoryRouter>,
   );
 }
+afterEach(() => vi.unstubAllGlobals());
 
 async function fillEventForm(user: ReturnType<typeof userEvent.setup>) {
   await user.selectOptions(screen.getByLabelText(/site/i), "SITE-DEMO-01");
@@ -36,11 +37,12 @@ async function fillMeasurementForm(
 
 describe("App shell", () => {
   it("offers persistent capture while identifying dashboard data as in-memory", async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ status: 401, ok: false, headers: new Headers(), json: async () => ({ detail: 'authentication required' }) })));
     const user = userEvent.setup();
     renderApp();
     expect(screen.getByText(/Kartu dan ledger di bawah tetap memakai DemoStore/)).toBeInTheDocument();
     await user.click(screen.getByRole('link', { name: 'Mulai demo persisten' }));
-    expect(screen.getByRole('heading', { name: 'Capture backend persisten — sintetis' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Masuk backend sintetis' })).toBeInTheDocument();
   });
   it("shows the synthetic demo banner", () => {
     renderApp();

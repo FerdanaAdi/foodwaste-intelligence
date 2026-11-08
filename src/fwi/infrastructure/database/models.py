@@ -4,8 +4,8 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-from sqlalchemy import (CheckConstraint, DateTime, ForeignKey, ForeignKeyConstraint,
-                        Numeric, String, UniqueConstraint, Uuid)
+from sqlalchemy import (Boolean, CheckConstraint, DateTime, ForeignKey, ForeignKeyConstraint,
+                        Integer, Numeric, String, UniqueConstraint, Uuid)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -68,7 +68,7 @@ class Measurement(Base):
 
 class AuditEvent(Base):
     __tablename__ = "audit_events"
-    __table_args__ = (CheckConstraint("actor = 'synthetic-demo-actor'", name="audit_synthetic_actor"),)
+    __table_args__ = (CheckConstraint("(actor_principal_id IS NULL AND actor = 'synthetic-demo-actor') OR (actor_principal_id IS NOT NULL AND actor = CAST(actor_principal_id AS TEXT))", name="audit_actor_identity"),)
     audit_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     event_id: Mapped[UUID | None] = mapped_column(ForeignKey("waste_events.event_id"))
     measurement_id: Mapped[UUID | None] = mapped_column(ForeignKey("measurements.measurement_id"))
@@ -76,4 +76,66 @@ class AuditEvent(Base):
     entity_id: Mapped[UUID] = mapped_column(Uuid)
     action: Mapped[str] = mapped_column(String)
     actor: Mapped[str] = mapped_column(String)
+    actor_principal_id: Mapped[UUID | None] = mapped_column(ForeignKey('auth_principals.principal_id'))
+    reason: Mapped[str | None] = mapped_column(String)
     recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class Principal(Base):
+    __tablename__ = 'auth_principals'
+    principal_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    username: Mapped[str] = mapped_column(String(80), unique=True)
+    password_hash: Mapped[str] = mapped_column(String)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class Membership(Base):
+    __tablename__ = 'auth_memberships'
+    __table_args__ = (UniqueConstraint('principal_id', 'site_id'),
+                     CheckConstraint("role IN ('writer','reader')", name='auth_demo_role'))
+    membership_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    principal_id: Mapped[UUID] = mapped_column(ForeignKey('auth_principals.principal_id'))
+    site_id: Mapped[UUID] = mapped_column(ForeignKey('sites.site_id'))
+    role: Mapped[str] = mapped_column(String)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class AuthSession(Base):
+    __tablename__ = 'auth_sessions'
+    session_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    principal_id: Mapped[UUID] = mapped_column(ForeignKey('auth_principals.principal_id'))
+    secret_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    csrf_hash: Mapped[str] = mapped_column(String(64))
+    issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    revoked: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class PreAuth(Base):
+    __tablename__ = 'auth_preauth'
+    secret_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    csrf_hash: Mapped[str] = mapped_column(String(64))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    consumed: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class LoginThrottle(Base):
+    __tablename__ = 'auth_login_throttle'
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    failures: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class WriteIntent(Base):
+    __tablename__ = 'auth_write_intents'
+    __table_args__ = (CheckConstraint("kind IN ('event','measurement')", name='intent_kind'),
+                     CheckConstraint("state IN ('registered','committed')", name='intent_state'))
+    intent_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    principal_id: Mapped[UUID] = mapped_column(ForeignKey('auth_principals.principal_id'))
+    site_id: Mapped[UUID] = mapped_column(ForeignKey('sites.site_id'))
+    kind: Mapped[str] = mapped_column(String)
+    event_id: Mapped[UUID | None] = mapped_column(ForeignKey('waste_events.event_id'))
+    result_id: Mapped[UUID | None] = mapped_column(Uuid)
+    state: Mapped[str] = mapped_column(String, default='registered')
+    registered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

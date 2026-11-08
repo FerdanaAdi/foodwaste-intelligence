@@ -15,8 +15,14 @@ from alembic.config import Config
 from sqlalchemy import select, text
 from sqlalchemy.engine import make_url
 import uvicorn
+from fwi.infrastructure.ingress import local_server_config
 from fwi.api.app import create_app
 from fwi.infrastructure.database.demo_seed import seed_demo
+from fwi.infrastructure.database.security_seed import seed_security, PERSONAS
+from fwi.infrastructure.database.models import AuthSession, WriteIntent
+from fwi.application.security import now, revoke_session
+from datetime import timedelta
+from sqlalchemy import update
 from fwi.infrastructure.database.models import Base
 from fwi.infrastructure.database.session import create_engine_for_url, create_session_factory
 from test_demo_postgresql import verify_test_target, drop_created_schema
@@ -103,11 +109,19 @@ def cleanup_all():
 
 
 def serve():
+    tls = {key: os.environ.get(key) for key in ('FWI_TLS_CERTFILE', 'FWI_TLS_KEYFILE', 'FWI_BACKEND_CA_FILE')}
+    if not all(value and Path(value).is_file() for value in tls.values()):
+        raise RuntimeError('approved existing TLS files required before creating a browser fixture')
+    passwords = {name: os.environ.get('FWI_BROWSER_' + name.upper(), '') for name in PERSONAS}
+    if any(len(value) < 16 for value in passwords.values()):
+        raise RuntimeError('private per-run synthetic credentials required')
     engine = create_engine_for_url(os.environ['FWI_TEST_DATABASE_URL'])
     schema = 'fwi_demo_test_' + uuid4().hex
     record = {'schema': schema, 'oid': None, 'run_token': TOKEN, 'cleanup_verified': False}
     factory = app = server = thread = None
     posts = []
+    auth_http = []
+    operations = []
     try:
         with engine.begin() as connection:
             verify_test_target(connection, schema)
@@ -129,15 +143,22 @@ def serve():
             config.attributes['connection'] = connection
             command.upgrade(config, 'head')
             revision = connection.scalar(text('SELECT version_num FROM alembic_version'))
-            if revision != 'demo_0001':
+            if revision != 'auth_0002':
                 raise RuntimeError('unexpected migration baseline')
             identity = dict(connection.execute(text('SELECT current_user AS role,current_database() AS database,version() AS version')).mappings().one())
         seed_demo(factory)
+        seed_security(factory, passwords)
         os.environ['FWI_DATABASE_URL'] = scoped.render_as_string(hide_password=False)
         app = create_app()
 
         async def observed_app(scope, receive, send):
             status = None
+            if scope['type'] == 'http' and scope['path'].startswith('/auth/'):
+                headers = dict(scope['headers'])
+                auth_http.append({'path': scope['path'], 'scheme': scope['scheme'],
+                    'origin_allowed': headers.get(b'origin') == b'https://127.0.0.1:5173',
+                    'referer_allowed': headers.get(b'referer', b'').startswith(b'https://127.0.0.1:5173/'),
+                    'fetch_site': headers.get(b'sec-fetch-site', b'').decode('ascii', errors='replace')})
             async def observed_send(message):
                 nonlocal status
                 if message['type'] == 'http.response.start':
@@ -147,10 +168,16 @@ def serve():
                 await app(scope, receive, observed_send)
             finally:
                 if scope['type'] == 'http' and scope['method'] == 'POST':
+                    operations.append({'path': scope['path'], 'status': status})
+                if scope['type'] == 'http' and scope['method'] == 'POST' and scope['path'].startswith('/demo/v0.1/'):
                     posts.append({'path': scope['path'], 'status': status})
 
-        port = 18000 if os.environ.get('FWI_LOCAL_SYNTHETIC_DEMO') == '1' else 8000
-        server = uvicorn.Server(uvicorn.Config(observed_app, host='127.0.0.1', port=port, log_level='warning', access_log=False))
+        server_config = local_server_config(observed_app, port=8000,
+            ssl_certfile=tls['FWI_TLS_CERTFILE'], ssl_keyfile=tls['FWI_TLS_KEYFILE'])
+        # Bound test teardown even if an HTTP client retains a TLS connection.
+        # Cleanup still refuses while the server thread remains alive.
+        server_config.timeout_graceful_shutdown = 3
+        server = uvicorn.Server(server_config)
         thread = threading.Thread(target=server.run, daemon=True)
         thread.start()
         deadline = time.monotonic() + 15
@@ -163,11 +190,34 @@ def serve():
             request = json.loads(line)
             if request['command'] == 'snapshot':
                 with factory() as session:
-                    data = {t.name: [dict(r) for r in session.execute(select(t).order_by(*t.primary_key.columns)).mappings()] for t in Base.metadata.sorted_tables}
+                    # Never export credential/session/CSRF verifiers to browser artifacts.
+                    data = {t.name: [dict(r) for r in session.execute(select(t).order_by(*t.primary_key.columns)).mappings()] for t in Base.metadata.sorted_tables if not t.name.startswith('auth_')}
+                    # Explicit allowlist: no session cookie/verifier, password or CSRF material.
+                    intents = [dict(r) for r in session.execute(select(WriteIntent.intent_id,
+                        WriteIntent.principal_id, WriteIntent.site_id, WriteIntent.kind,
+                        WriteIntent.state, WriteIntent.event_id, WriteIntent.result_id)).mappings()]
                 emit({'data': data, 'counts': {k: len(v) for k, v in data.items()},
-                      'sha256': hashlib.sha256(json.dumps(data, sort_keys=True, default=str).encode()).hexdigest(), 'posts': list(posts)})
+                      'sha256': hashlib.sha256(json.dumps(data, sort_keys=True, default=str).encode()).hexdigest(), 'posts': list(posts),
+                      'auth_http': list(auth_http), 'operations': list(operations), 'intents': intents})
             elif request['command'] == 'stop':
                 break
+            elif request['command'] in ('expire_sessions', 'revoke_sessions'):
+                with factory() as session, session.begin():
+                    verify_test_target(session.connection(), schema)
+                    if session.scalar(text('SELECT current_schema()')) != schema:
+                        raise RuntimeError('fixture scope mismatch')
+                    owned_oid = session.scalar(text('SELECT oid FROM pg_namespace WHERE nspname=:s '
+                        'AND nspowner=(SELECT oid FROM pg_roles WHERE rolname=current_user)'), {'s': schema})
+                    if owned_oid != record['oid']:
+                        raise RuntimeError('fixture OID/owner mismatch')
+                    if request['command'] == 'expire_sessions':
+                        session.execute(update(AuthSession).values(expires_at=now() - timedelta(seconds=1)))
+                    else:
+                        sessions = list(session.execute(select(AuthSession.principal_id, AuthSession.session_id)))
+                if request['command'] == 'revoke_sessions':
+                    for principal_id, session_id in sessions:
+                        revoke_session(factory, principal_id, session_id)
+                emit({'expired': request['command'] == 'expire_sessions', 'revoked': request['command'] == 'revoke_sessions'})
             else:
                 raise RuntimeError('unsupported harness command')
     finally:

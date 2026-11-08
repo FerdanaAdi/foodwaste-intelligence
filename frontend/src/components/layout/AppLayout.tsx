@@ -81,7 +81,7 @@ export default function AppLayout() {
           {backendCapture ? "Capture melalui API FastAPI/PostgreSQL sintetis lokal. Tidak ada fallback ke DemoStore."
             : backendMode ? "Halaman ini membaca API FastAPI/PostgreSQL lokal. Kegagalan API tidak diganti data in-memory."
             : "Sumber DemoStore in-memory: data sementara di browser, direset saat reload; tidak disimpan ke backend."}
-          {" "}Demo sintetis terisolasi; autentikasi dan penyimpanan evidence belum tersedia.
+          {" "}Demo sintetis terisolasi; backend memerlukan sesi sintetis HTTPS. Evidence storage belum tersedia; dashboard/ledger in-memory tidak memakai sesi backend.
         </p>
         <p>
           KPI {HELD_KPIS.join(", ")} berstatus HELD dan tidak dihitung di UI ini. Bukan sistem
