@@ -1,3 +1,58 @@
+# FWI AI Handoff — Owner acceptance / packaging proposal (2026-11-10)
+- Prepared docs/ai/FWI_OWNER_ACCEPTANCE_PACKET_2026-11-10.md with bounded acceptance, all 93 original pending paths/hashes, exclusions and two logical commit boundaries (91 runtime/test/migration files + 3 documents). New packet makes 94 pending entries; index remains empty.
+- All application/test/migration bytes match existing acceptance evidence. Results reused, not rerun: 472 backend + 6 subtests, 333 frontend, 45 targeted backend, Chrome HTTPS 16, proxy TLS 4 PASS. Technical synthetic PASS is not Owner UAT, external independent sign-off, full MVP or production acceptance.
+- Pending-file scan found no private keys, provider-token patterns, credential-bearing URLs, literal secret assignments or email indicators. Generated evidence/builds/dependencies stay ignored; no .env/pgpass/user credential files opened. No secret scanner can establish data provenance universally.
+- Packet and this handoff are the only edits in packaging preparation. Owner approval of exact allowlist/commits and future push/PR remains required; no staging/commit/push/merge/deployment/reset/stash/clean performed. OD-P1-02/other methodology and Gate B remain OPEN.
+
+## Prior acceptance evidence retained below
+
+# FWI AI Handoff — final integrated browser acceptance (2026-11-09)
+- Delta re-verification PASS: 45 targeted backend/PG/security/migration tests; original Codex reproduction assertions unchanged. Application/security/permission/UI bytes unchanged in this task. Codex re-verification in the implementation chat is not a separate external reviewer sign-off.
+- Windows installed Chrome HTTPS E2E: 16 PASS, 0 FAIL/SKIP/flaky, workers=1/retries=0 at https://127.0.0.1:5173 -> HTTPS Vite proxy -> FastAPI :8000 -> PostgreSQL 18.6 fwi_test/fwi_demo_test. Real TLS proxy tests 4 PASS, 0 SKIP.
+- Verified: three personas/two sites, site concealment, reader write denial, global alert denial; stable event/two observations, long Decimal, missing/zero, single policy_unresolved/repeated unresolved, reportable_mass null; persistence/refresh/ledger/CSV/evidence/review; W-20/W-21/J-07 no automatic POST replay; HELD KPIs value-free.
+- Test-only corrections: two stale demo_0005 assertions now expect int_p1_0006; explicit KPI catalogue seed in owned browser fixture; combined acceptance scenario added. Initial targeted trial failed because new test used receipt_ref instead of source_ref (422 before expected permission check); corrected payload and fresh full run passed.
+- Runtime diagnostics: Windows asyncio connection-reset/graceful-shutdown warnings occurred; all 16 assertions/teardowns passed. These diagnostics are not claimed fixed. Earlier full 472 backend + 6 subtests/333 frontend/typecheck/build results reused because application bytes are unchanged.
+- Cleanup verified for 17 owned schemas (16 final scenarios + initial failed trial); legacy schema OID 324554 unchanged. Temporary TLS private files removed, no OS trust-store change, no Owner credentials/UAT resources reused or stopped. Source package unchanged; no secrets in acceptance evidence.
+- Evidence: frontend/browser-evidence/p1-p2-final-acceptance.json; frontend/browser-evidence/results.json; frontend/playwright-report/index.html (ignored). Original integration report/manifests preserved. OD-P1-02 and other methodology/Gate B/cost/timezone decisions OPEN; no full MVP/production claim.
+- Next gate: Owner reviews exact test/documentation delta, remaining decisions and external review provenance before separately authorizing staging/commit/PR. No staging/commit/push/merge/deployment performed.
+
+## Historical integrated verification retained below
+
+# FWI AI Handoff — P1/P2 controlled local integration (2026-11-09)
+- Owner-authorized source manifest 8ca773e459e987f20f5387617b6230b81a925ae2e1e767eda74b9d44b95f34e9; source patch 1a88b865dcf5db75d6fde72dc75433cca420fe09ead3152b3318b54b4f8baa4f. Source untouched. No staging/commit/push/PR/merge-to-main/deploy.
+- Captured 32 new files; reconciled 10 shared paths without replacing P0. Preserved all original handoff bytes below. Exact 47-path integration scope/provenance: frontend/browser-evidence/p1-p2-integration-verification.json (ignored).
+- Shared auth/model/router/proxy/navigation retain P0 behavior; added candidate routes remain within BackendAuthBoundary. Fixed real session-parser incompatibility: recognize alert.read/alert.ack. Added corresponding session and combined proxy regression tests.
+- Alembic single head int_p1_0006 joins demo_0005 and p1_0003 with no join DDL/history rewrite. Fresh + P0 upgrade tests PASS with ORM metadata match; upgrade preserves one event, two measurements and five historical audits byte-for-value.
+- Actual combined tests: full PostgreSQL suite 472 PASS + 6 subtests, 0 FAIL/SKIP (130 warnings); frontend 333 PASS with 2 workers; typecheck/build, repository verifier, pip check, whitespace PASS. Strengthened final migration tests separately 2 PASS. Proxy 3 PASS/1 TLS SKIP.
+- Initial verification failures: new migration test used wrong table name; integration helper introduced frontend text-encoding errors (4 auth assertions failed). Corrected without weakening original assertions; final full suites passed. Existing act/jsdom warnings and new >500kB build chunk warning remain technical debt.
+- Browser HTTPS E2E NOT RUN: approved dedicated TLS files/profile absent; Owner UAT services/resources not reused or stopped. Existing browser fixture now pins tested combined head. Browser acceptance and integrated independent delta review remain PENDING.
+- Invariants: missing != zero; repeated measurements do not generate events; raw != reportable; API eligible/reportable mass remains null; global alert mutation denied including access=None; UNKNOWN guards and HELD OP-08/FI-02/NI-03 preserved. OD-P1-02 and other methodology/timezone/cost/DTO/Gate B decisions remain OPEN; no full P1/P2 acceptance claim.
+
+## Prior P0 integration and Owner work retained byte-identically below
+
+# FWI AI Handoff — P0 controlled integration (synthetic subset verified)
+- Owner approved P0-only integration on `codex/fwi-integration-01`, HEAD remains `7462897e4b34674ac4db30764819a0e07e535a3b`; no staging/commit/push/PR/merge/deploy. Source manifest digest `64c2dacba3f2fd740224b784a3a1b1fb84378a827267da3934f2289d518ad6d3`.
+- Captured 49 approved implementation/test files (15 existing, 34 new), manually reconciled App/layout. Original detail/count-summary page and its tests remain byte-identical; all prior HANDOFF bytes retained below. Candidate HANDOFF, PRD draft and manifest artifacts were not copied.
+- Actual integrated verification: backend PostgreSQL 18.6 `404 PASS + 6 subtests PASS` (98 warnings); frontend `317 PASS` with `--maxWorkers=2`; typecheck/build, verify_kit, pip check, whitespace PASS. Prior unbounded-parallel flakes and React act/jsdom warnings are not declared fixed.
+- Real Windows Chrome HTTPS: 15 PASS / 0 FAIL / 0 SKIP / 0 flaky, workers=1/retries=0 (J-07, W-20–W-25 and security scenarios). Temporary self-signed test profile only; Vite validates backend CA; no OS trust change. Browser POST suites were not rerun after test-only proxy correction.
+- Integration defect fixed only in `frontend/tests/backend-proxy.test.mjs`: obsolete event-list-denied expectation failed (2 PASS/1 FAIL); approved-route/query/write-negative coverage updated; corrected TLS proxy run 3 PASS/0 FAIL/0 SKIP. Evidence also records an output-only cp1252 Unicode error after tests had completed; saved UTF-8 log confirms results.
+- Alembic single head `demo_0005` via `demo_0001 -> auth_0002 -> demo_0002..0005`; upgrades/ORM metadata verified only in disposable test schemas. Browser's 15 owned schemas and temporary TLS cleaned; pre-existing legacy schema/OID preserved. No dev DB or P1/P2 migration executed.
+- Partial P0 only: Gate B administration, physical evidence/ADR-005, effective correction/validation, XLSX/export audit-retention, Master DTO mappings, timezone policy remain OPEN; DQ API lacks period/stage filters, AC-14 persistent attributes absent. FWI-03 T01–T30 original text preserved: 0 full PASS/8 PARTIAL/22 N/A. Owner UAT/Figma and independent integrated-delta review PENDING. HELD OP-08/FI-02/NI-03 disabled.
+- P1/P2 not integrated or authorized here. Prior static blockers remain: repeated-measurement SUM in trends, unapproved max-net allocation reference, site writer mutating global alert-rule toggle. Requires separate remediation/Owner integration approval; do not overwrite P0 or rewrite applied migration history.
+- Full scope, backup, source/destination hashes, AC/FR limits, commands and cleanup: `frontend/browser-evidence/p0-integration-verification.json`; Chrome report located by `frontend/browser-evidence/p0-browser-latest.json` (ignored). Servers stopped; no retained UAT dataset. Stop after Phase C for Owner review.
+
+## Historical handoff retained byte-identically below
+
+# FWI AI Handoff — MVP v0.1 bounded measurement summary
+- Branch `codex/fwi-integration-01`, HEAD `7462897e4b34674ac4db30764819a0e07e535a3b`; CP1–CP11 locally committed. Owner permits only this first bounded MVP task; no further stage, commit, push, PR, merge or deployment authorized.
+- Backend event detail now counts measurement records and the five API observation statuses, only after both responses are parsed successfully. Repeated observations keep one event identity; no mass totals, validation status, completeness score, KPI or fixture fallback added.
+- Loading/refresh hides prior counts; empty success differs from errors; 401/403 and stale-response/auth protections remain. The existing two-GET non-atomic-snapshot notice is retained. Backend/auth/schema/permissions unchanged; OP-08/FI-02/NI-03 HELD.
+- Actual tests: `npm --prefix frontend test -- tests/backend-detail.test.tsx tests/backend-auth.test.tsx` 39 PASS; from frontend, `npm test -- --maxWorkers=1 --no-file-parallelism` 284 PASS/0 FAIL/0 SKIP; `npm run typecheck` and `npm run build` PASS. Existing jsdom Export navigation warnings remain.
+- `python -B -I scripts/verify_kit.py` and `git diff --check` PASS. No PostgreSQL, backend, proxy or real-browser tests run for this frontend-only task; historical evidence below is not a new result. Evidence/hashes/patch: `frontend/browser-evidence/mvp-measurement-summary-verification.json` (ignored).
+- FR-007 remains partial: single-event counts only; no persistent site/period/stage dashboard, supported blocked/validation status, or completeness inference. Gate B, methodology/DTO decisions and other P0 gaps remain open. Stop for Owner review; no next implementation step started.
+
+## Historical handoff retained (superseded by the current bounded task above)
+
 # FWI AI Handoff — CP11-A application reconciliation
 - Branch `codex/fwi-integration-01`; baseline `d5b3966c29a38ac196189b56dd79e2f6734357f6`. Owner permits only App.tsx, AppLayout.tsx and this handoff; no staging/commit/push/PR/merge/deploy.
 - CP1–CP10 locally committed (94 paths). DQ/Master/Evidence fixture pages mounted separately under `/demo/`; backend Event/Measurement routes retain the unchanged SEC-01D BackendAuthBoundary. No DTO conversion, candidate capture or backend API changes.
