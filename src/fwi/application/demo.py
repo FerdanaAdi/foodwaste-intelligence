@@ -4,10 +4,11 @@ from datetime import datetime, timezone
 from uuid import UUID
 from contextlib import contextmanager
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from fwi.domain.demo_measurements import validate_demo_measurement
 from fwi.domain.events import MaterialWasteEvent
+from fwi.application.dataquality import DataQualityFilters, build_data_quality_view
 from fwi.infrastructure.database.models import AuditEvent, Measurement, Site, WasteEvent
 from fwi.application import security
 
@@ -105,3 +106,81 @@ def read_measurements(factory, event_id: UUID, access=None, intent=None):
             security.permit(access, event.site_id, 'measurement.read', conceal=True)
         records = session.scalars(select(Measurement).where(Measurement.event_id == event_id).order_by(Measurement.recorded_at, Measurement.measurement_id))
         return [snapshot(record) for record in records]
+
+
+EVENT_TYPE_FILTERS = {'at_risk_surplus', 'actual_loss_discard'}
+MAX_PAGE_SIZE = 100
+
+
+def read_data_quality(factory, site_id: UUID, access=None, intent=None):
+    """Authorized count-only data-quality view (FR-007) over persistent site rows.
+
+    Site scope is re-checked server-side; drill-down returns stable identities
+    only (no mass aggregation, no KPI output; OP-08/FI-02/NI-03 stay HELD)."""
+    from dataclasses import asdict
+
+    with unit(factory, access) as session:
+        if access:
+            security.permit(access, site_id, 'event.read', conceal=True)
+        events = session.scalars(select(WasteEvent).where(WasteEvent.site_id == site_id)
+                                 .order_by(WasteEvent.occurred_at.desc(), WasteEvent.event_id.asc()))
+        event_rows = [snapshot(record) for record in events]
+        event_ids = [row['event_id'] for row in event_rows]
+        measurement_rows: list[dict] = []
+        if event_ids:
+            records = session.scalars(select(Measurement).where(Measurement.event_id.in_(event_ids))
+                                      .order_by(Measurement.recorded_at, Measurement.measurement_id))
+            measurement_rows = [snapshot(record) for record in records]
+        view = build_data_quality_view(event_rows, measurement_rows,
+                                       DataQualityFilters(site_id=str(site_id)))
+        return {
+            'summary': asdict(view.summary),
+            # Drill-down references only; fetch details through the ledger/detail routes.
+            'records': [{'event_id': str(record.event['event_id']),
+                         'event_type': record.event['event_type'],
+                         'occurred_at': record.event['occurred_at'].isoformat() if record.event.get('occurred_at') else None,
+                         'measurement_ids': [m.measurement_id for m in record.measurements],
+                         'observation_statuses': [m.observation_status for m in record.measurements]}
+                        for record in view.records],
+        }
+
+
+def list_events(factory, site_id: UUID, query, access=None, intent=None):
+    """Authorized, deterministic site ledger page. Count is query-separate from rows
+    so measurement joins can never multiply event rows (PRD EVT-005/DQ-001)."""
+    from datetime import date as date_type
+
+    with unit(factory, access) as session:
+        if access:
+            security.permit(access, site_id, 'event.read', conceal=True)
+        criteria = [WasteEvent.site_id == site_id]
+        if query.get('event_type') is not None:
+            if query['event_type'] not in EVENT_TYPE_FILTERS:
+                raise ValueError('unsupported event_type filter for demo ledger')
+            criteria.append(WasteEvent.event_type == query['event_type'])
+        if query.get('stage_code') is not None:
+            criteria.append(WasteEvent.stage_code == query['stage_code'])
+        for bound, column in (('operation_date_from', WasteEvent.operation_date),
+                              ('operation_date_to', WasteEvent.operation_date)):
+            if query.get(bound) is not None:
+                try:
+                    value = date_type.fromisoformat(query[bound])
+                except (TypeError, ValueError) as exc:
+                    raise ValueError(f'{bound} must be an ISO date (YYYY-MM-DD)') from exc
+                criteria.append(column >= value if bound.endswith('from') else column <= value)
+        try:
+            page = int(query.get('page', 1))
+            page_size = int(query.get('page_size', 20))
+        except (TypeError, ValueError) as exc:
+            raise ValueError('page and page_size must be integers') from exc
+        if page < 1 or page_size < 1:
+            raise ValueError('page and page_size must be positive')
+        page_size = min(page_size, MAX_PAGE_SIZE)
+        total = session.scalar(select(func.count()).select_from(WasteEvent).where(*criteria))
+        records = session.scalars(
+            select(WasteEvent).where(*criteria)
+            # Stable ordering with an immutable tie-breaker for equal timestamps.
+            .order_by(WasteEvent.occurred_at.desc(), WasteEvent.event_id.asc())
+            .offset((page - 1) * page_size).limit(page_size))
+        return {'events': [snapshot(record) for record in records],
+                'total': int(total or 0), 'page': page, 'page_size': page_size}

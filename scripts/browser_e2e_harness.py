@@ -143,11 +143,14 @@ def serve():
             config.attributes['connection'] = connection
             command.upgrade(config, 'head')
             revision = connection.scalar(text('SELECT version_num FROM alembic_version'))
-            if revision != 'auth_0002':
+            if revision != 'int_p1_0006':
                 raise RuntimeError('unexpected migration baseline')
             identity = dict(connection.execute(text('SELECT current_user AS role,current_database() AS database,version() AS version')).mappings().one())
         seed_demo(factory)
         seed_security(factory, passwords)
+        # Explicit owned-browser-fixture seed; never application startup.
+        from fwi.infrastructure.database.p2_seed import seed_kpi_registry
+        seed_kpi_registry(factory)
         os.environ['FWI_DATABASE_URL'] = scoped.render_as_string(hide_password=False)
         app = create_app()
 

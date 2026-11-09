@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { domainCalls, installDomainFetch, prepareSession } from './backend-auth-fixture';
@@ -8,6 +8,10 @@ import fixture from "./fixtures/backend-detail.json";
 import { readBackendEvent, REQUEST_TIMEOUT_MS } from "@/backend/client";
 
 const id = fixture.event.event_id;
+const summaryName = "Ringkasan pengukuran backend";
+function summaryCount(label: string) {
+  return within(screen.getByRole("region", { name: summaryName })).getByText(label).nextElementSibling;
+}
 function response(value: unknown, status = 200) {
   return { ok: status === 200, status, json: async () => value } as Response;
 }
@@ -41,6 +45,12 @@ describe("backend detail read-only route", () => {
     expect(screen.getByText("Memuat event backend…")).toBeInTheDocument();
     await screen.findByText("Estimasi (estimated)");
     expect(screen.getAllByRole("article")).toHaveLength(5);
+    expect(summaryCount("Jumlah measurement pada respons")).toHaveTextContent(/^5$/);
+    for (const status of ["observed", "estimated", "missing", "measured_zero", "not_measured"]) {
+      expect(summaryCount(`Jumlah record ${status}`)).toHaveTextContent(/^1$/);
+    }
+    expect(screen.getByText(/Dua GET dibaca terpisah, bukan snapshot atomik/)).toBeInTheDocument();
+    expect(within(screen.getByRole("region", { name: summaryName })).getByText(/tidak menyatakan kelengkapan atau mutu data/)).toBeInTheDocument();
     expect(screen.getAllByLabelText(`Net: ${fixture.measurement.net} kg`)).toHaveLength(2);
     expect(screen.getAllByLabelText(/: Tidak tersedia \(null\)/)).toHaveLength(6);
     expect(screen.getAllByLabelText(/: 0\.4 kg$/)).toHaveLength(2);
@@ -72,6 +82,11 @@ describe("backend detail read-only route", () => {
   it("empty success differs from failed history", async () => {
     mockAPI([]); mount();
     await screen.findByText(/Belum ada measurement untuk event/);
+    expect(summaryCount("Jumlah measurement pada respons")).toHaveTextContent(/^0$/);
+    for (const status of ["observed", "estimated", "missing", "measured_zero", "not_measured"]) {
+      expect(summaryCount(`Jumlah record ${status}`)).toHaveTextContent(/^0$/);
+    }
+    expect(screen.queryByRole("article")).not.toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
   it.each([404, 503])("shows event HTTP %s failure without fallback", async status => {
@@ -80,6 +95,7 @@ describe("backend detail read-only route", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(String(status));
     expect(screen.queryByText("EVT-DEMO-2026-0001")).not.toBeInTheDocument();
     expect(screen.queryByRole("article")).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: summaryName })).not.toBeInTheDocument();
   });
   it("partial failure keeps event but never claims history is empty", async () => {
     vi.stubGlobal("fetch", vi.fn(async (url: string) => response(url.endsWith("/measurements") ? {} : fixture.event, url.endsWith("/measurements") ? 503 : 200)));
@@ -87,11 +103,13 @@ describe("backend detail read-only route", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Riwayat gagal diambil");
     expect(screen.getByText("at_risk_surplus")).toBeInTheDocument();
     expect(screen.queryByText(/Belum ada measurement untuk event/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: summaryName })).not.toBeInTheDocument();
   });
   it("rejects malformed history instead of rendering partial observations", async () => {
     mockAPI([fixture.measurement, { ...fixture.measurement, net: 0 }]); mount();
     expect(await screen.findByRole("alert")).toHaveTextContent("kontrak demo");
     expect(screen.queryByRole("article")).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: summaryName })).not.toBeInTheDocument();
   });
   it("shows network and invalid JSON errors safely", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("private detail")));
@@ -131,5 +149,98 @@ describe("backend detail read-only route", () => {
     await act(async () => { resolveOld(response(fixture.event)); });
     await waitFor(() => expect(screen.queryByText(id)).not.toBeInTheDocument());
     expect(screen.getByText(secondId)).toBeInTheDocument();
+    expect(summaryCount("Jumlah measurement pada respons")).toHaveTextContent(/^0$/);
+  });
+});
+
+describe("backend event measurement count summary", () => {
+  it("counts repeated observations on one stable event without aggregation or another event", async () => {
+    mockAPI([fixture.measurement, { ...fixture.measurement, measurement_id: "55555555-5555-4555-8555-555555555555" }]);
+    mount();
+    await screen.findByRole("region", { name: summaryName });
+    expect(summaryCount("Jumlah measurement pada respons")).toHaveTextContent(/^2$/);
+    expect(summaryCount("Jumlah record observed")).toHaveTextContent(/^2$/);
+    expect(summaryCount("Jumlah record measured_zero")).toHaveTextContent(/^0$/);
+    expect(screen.getAllByRole("article")).toHaveLength(2);
+    expect(within(screen.getByRole("region", { name: "Detail event backend" })).getAllByText(id)).toHaveLength(1);
+    expect(screen.getAllByLabelText(`Net: ${fixture.measurement.net} kg`)).toHaveLength(2);
+    expect(domainCalls()).toHaveLength(2);
+    for (const call of domainCalls()) expect(call[1]?.method).toBe("GET");
+  });
+
+  it.each(["event", "measurements"])("does not show counts until the %s response also succeeds", async pendingKind => {
+    let resolve!: (value: Response) => void;
+    const pending = new Promise<Response>(r => { resolve = r; });
+    vi.stubGlobal("fetch", vi.fn((url: string) => {
+      const isHistory = url.endsWith("/measurements");
+      return (isHistory === (pendingKind === "measurements")) ? pending : Promise.resolve(response(isHistory ? [fixture.measurement] : fixture.event));
+    }));
+    mount();
+    await waitFor(() => expect(domainCalls()).toHaveLength(2));
+    if (pendingKind === "measurements") await screen.findByRole("region", { name: "Detail event backend" });
+    else expect(screen.getByText("Memuat event backend…")).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: summaryName })).not.toBeInTheDocument();
+    await act(async () => resolve(response(pendingKind === "measurements" ? [fixture.measurement] : fixture.event)));
+    await screen.findByRole("region", { name: summaryName });
+    expect(summaryCount("Jumlah measurement pada respons")).toHaveTextContent(/^1$/);
+  });
+
+  it("hides old counts during refresh and replaces them only with the new successful response", async () => {
+    let refreshing = false;
+    let resolve!: (value: Response) => void;
+    const pending = new Promise<Response>(r => { resolve = r; });
+    vi.stubGlobal("fetch", vi.fn((url: string) => refreshing && url.endsWith("/measurements")
+      ? pending : Promise.resolve(response(url.endsWith("/measurements") ? [fixture.measurement] : fixture.event))));
+    mount();await screen.findByRole("region", { name: summaryName });
+    expect(summaryCount("Jumlah measurement pada respons")).toHaveTextContent(/^1$/);
+    refreshing = true;
+    await userEvent.setup().click(screen.getByRole("button", { name: /Muat ulang/ }));
+    expect(screen.queryByRole("region", { name: summaryName })).not.toBeInTheDocument();
+    await screen.findByText("Memuat riwayat pengukuran…");
+    await act(async () => resolve(response([])));
+    await screen.findByRole("region", { name: summaryName });
+    expect(summaryCount("Jumlah measurement pada respons")).toHaveTextContent(/^0$/);
+    expect(screen.getByText(/Belum ada measurement untuk event/)).toBeInTheDocument();
+    expect(screen.queryByRole("article")).not.toBeInTheDocument();
+    for (const call of domainCalls()) expect(call[1]?.method).toBe("GET");
+  });
+
+  it.each([401, 403])("session/action HTTP %s closes private counts without fixture fallback", async status => {
+    vi.stubGlobal("fetch", vi.fn(async () => response({}, status)));
+    mount();
+    await screen.findByRole("heading", { name: "Masuk backend sintetis" });
+    expect(screen.queryByRole("region", { name: summaryName })).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Detail event backend" })).not.toBeInTheDocument();
+    expect(screen.queryByText("EVT-DEMO-2026-0001")).not.toBeInTheDocument();
+    for (const call of domainCalls()) expect(call[1]?.method).toBe("GET");
+  });
+
+  it.each([404, 503])("history HTTP %s never becomes a zero-count or complete summary", async status => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => url.endsWith("/measurements") ? response({}, status) : response(fixture.event)));
+    mount();
+    expect(await screen.findByRole("alert")).toHaveTextContent(String(status));
+    expect(screen.getByRole("region", { name: "Detail event backend" })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: summaryName })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Belum ada measurement untuk event/)).not.toBeInTheDocument();
+  });
+
+  it("does not summarize successful measurements when the event cannot be verified", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => url.endsWith("/measurements") ? response([fixture.measurement]) : response({}, 404)));
+    mount();
+    expect(await screen.findByRole("alert")).toHaveTextContent("404");
+    expect(screen.queryByRole("region", { name: summaryName })).not.toBeInTheDocument();
+    expect(screen.queryByRole("article")).not.toBeInTheDocument();
+  });
+
+  it.each(["duplicate ID", "foreign event", "unknown status"])("refuses the entire count summary for %s in history", async problem => {
+    const second = { ...fixture.measurement,
+      measurement_id: problem === "duplicate ID" ? fixture.measurement.measurement_id : "55555555-5555-4555-8555-555555555555",
+      ...(problem === "foreign event" ? { event_id: "66666666-6666-4666-8666-666666666666" } : {}),
+      ...(problem === "unknown status" ? { observation_status: "invented_status" } : {}),
+    };
+    mockAPI([fixture.measurement, second]);mount();
+    expect(await screen.findByRole("alert")).toHaveTextContent("kontrak demo");
+    expect(screen.queryByRole("region", { name: summaryName })).not.toBeInTheDocument();
+    expect(screen.queryByRole("article")).not.toBeInTheDocument();
   });
 });

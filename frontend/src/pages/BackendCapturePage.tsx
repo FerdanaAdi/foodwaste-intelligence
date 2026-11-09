@@ -13,7 +13,7 @@ import { UncertainResultState } from '@/components/states/DisplayStates';
 const field = "w-full rounded border border-slate-300 bg-white p-2";
 const initialMeasurement: MeasurementInput = {
   observation_status: "" as MeasurementInput["observation_status"], gross: "", tare: "", net: "", original_unit: "kg", mass_basis: "" as MeasurementInput["mass_basis"],
-  measurement_method: "", provenance: "", measured_at: "",
+  measurement_method: "", provenance: "", measured_at: "", original_value_lexeme: "", instrument_ref: "", sample_context: "",
 };
 type Feedback = { kind: "error" | "success" | "unknown"; message: string } | null;
 
@@ -25,7 +25,7 @@ export default function BackendCapturePage() {
   const [eventId, setEventId] = useState<string | null>(null);
   const [confirmedEvent, setConfirmedEvent] = useState<BackendEvent | null>(null);
   const [history, setHistory] = useState<BackendMeasurement[] | null>(null);
-  const [eventInput, setEventInput] = useState<EventInput>({ organization_id: SYNTHETIC_ORG_ID, site_id: authSnapshot().site, event_type: "" as EventInput["event_type"], occurred_at: "" });
+  const [eventInput, setEventInput] = useState<EventInput>({ organization_id: SYNTHETIC_ORG_ID, site_id: authSnapshot().site, event_type: "" as EventInput["event_type"], occurred_at: "", stage_code: "", process_step: "", operation_date: "" });
   const [measurement, setMeasurement] = useState<MeasurementInput>(initialMeasurement);
   const [feedback, setFeedback] = useState<Feedback>(null);
   const [readFeedback, setReadFeedback] = useState<string | null>(null);
@@ -195,6 +195,14 @@ export default function BackendCapturePage() {
         <input className={field} value={eventInput.occurred_at} onChange={e => setEventInput(v => ({ ...v, occurred_at: e.target.value }))} placeholder="2026-11-06T12:00:00+08:00" aria-invalid={!!fieldErrors.occurred_at} />
         {fieldErrors.event_type && <span className="text-red-700">{fieldErrors.event_type}</span>}{fieldErrors.occurred_at && <span className="text-red-700">{fieldErrors.occurred_at}</span>}
       </label>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <label className="block">Stage code (opsional)<input className={field} value={eventInput.stage_code ?? ""} onChange={e => setEventInput(v => ({ ...v, stage_code: e.target.value }))} placeholder="mis. preparation" aria-invalid={!!fieldErrors.stage_code} />{fieldErrors.stage_code && <span className="text-red-700">{fieldErrors.stage_code}</span>}</label>
+        <label className="block">Process step (opsional)<input className={field} value={eventInput.process_step ?? ""} onChange={e => setEventInput(v => ({ ...v, process_step: e.target.value }))} placeholder="mis. batch_completion" /></label>
+        <label className="block">Tanggal operasi (opsional; tidak dihitung otomatis)
+          <input className={field} value={eventInput.operation_date ?? ""} onChange={e => setEventInput(v => ({ ...v, operation_date: e.target.value }))} placeholder="YYYY-MM-DD" aria-invalid={!!fieldErrors.operation_date} />
+          {fieldErrors.operation_date && <span className="text-red-700">{fieldErrors.operation_date}</span>}
+        </label>
+      </div>
       <button type="submit" className="rounded bg-sky-700 px-4 py-2 text-white disabled:opacity-50" disabled={busy || locked}>Simpan event backend</button>
     </form>}
 
@@ -229,6 +237,12 @@ export default function BackendCapturePage() {
       <label className="block">Measurement method<input className={field} value={measurement.measurement_method} onChange={e => setMeasurement(m => ({ ...m, measurement_method: e.target.value }))} />{fieldErrors.measurement_method && <span className="text-red-700">{fieldErrors.measurement_method}</span>}</label>
       <label className="block">Provenance sintetis<input className={field} value={measurement.provenance} onChange={e => setMeasurement(m => ({ ...m, provenance: e.target.value }))} />{fieldErrors.provenance && <span className="text-red-700">{fieldErrors.provenance}</span>}</label>
       <label className="block">Waktu pengukuran ISO-8601 dengan offset<input className={field} value={measurement.measured_at} placeholder="2026-11-06T12:02:00+08:00" onChange={e => setMeasurement(m => ({ ...m, measured_at: e.target.value }))} />{fieldErrors.measured_at && <span className="text-red-700">{fieldErrors.measured_at}</span>}</label>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <label className="block">Nilai asal diketik apa adanya (opsional)<input className={field} inputMode="decimal" value={measurement.original_value_lexeme ?? ""} onChange={e => setMeasurement(m => ({ ...m, original_value_lexeme: e.target.value }))} placeholder="mis. 2.40" /></label>
+        <label className="block">Referensi alat (opsional)<input className={field} value={measurement.instrument_ref ?? ""} onChange={e => setMeasurement(m => ({ ...m, instrument_ref: e.target.value }))} placeholder="mis. SCALE-SYN-01" /></label>
+        <label className="block">Konteks sampel (opsional)<input className={field} value={measurement.sample_context ?? ""} onChange={e => setMeasurement(m => ({ ...m, sample_context: e.target.value }))} placeholder="mis. full_bin" /></label>
+      </div>
+      <p className="text-sm">Nilai asal yang diketik disimpan sebagai teks provenance; backend tetap memvalidasi desimal secara exact. Field kosong tidak dikirim sebagai nol.</p>
       {fieldErrors.observation_status && <p className="text-red-700">{fieldErrors.observation_status}</p>}{fieldErrors.mass_basis && <p className="text-red-700">{fieldErrors.mass_basis}</p>}
       <button type="submit" disabled={busy || locked} className="rounded bg-sky-700 px-4 py-2 text-white disabled:opacity-50">Simpan measurement ke event ini</button>
     </form>}

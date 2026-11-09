@@ -13,7 +13,7 @@ from fastapi.exceptions import RequestValidationError
 from sqlalchemy.exc import SQLAlchemyError
 
 from fwi import __version__
-from fwi.api.routes import auth, demo, health
+from fwi.api.routes import auth, demo, health, p1, p2
 from fwi.application import security
 from fwi.infrastructure.database.session import (
     create_session_factory,
@@ -40,6 +40,8 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(auth.router)
     app.include_router(demo.router)
+    app.include_router(p1.router)
+    app.include_router(p2.router)
     @app.exception_handler(RequestValidationError)
     async def invalid_input(request: Request, error):
         # Pydantic's default input echo can include credentials. Never return it.
@@ -61,7 +63,7 @@ def create_app() -> FastAPI:
     @app.middleware('http')
     async def private_response(request, call_next):
         response = await call_next(request)
-        if request.url.path.startswith(('/auth/', '/demo/')):
+        if request.url.path.startswith(('/auth/', '/demo/', '/p1/', '/p2/')):
             response.headers['Cache-Control'] = 'no-store'
             identity = getattr(request.state, 'auth_context', None)
             if identity and response.status_code != 401:

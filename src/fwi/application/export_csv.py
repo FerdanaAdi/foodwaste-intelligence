@@ -17,11 +17,13 @@ from uuid import UUID
 from fwi.domain.demo_measurements import validate_demo_measurement
 
 EVENT_COLUMNS = ('event_id', 'organization_id', 'site_id', 'event_type',
-                 'operation_date', 'occurred_at', 'recorded_at', 'export_label')
+                 'stage_code', 'process_step', 'operation_date', 'occurred_at',
+                 'recorded_at', 'export_label')
 MEASUREMENT_COLUMNS = ('measurement_id', 'event_id', 'site_id', 'measured_at',
                        'recorded_at', 'gross', 'tare', 'net', 'original_unit',
                        'mass_basis', 'measurement_method', 'observation_status',
-                       'validation_status', 'provenance', 'export_label')
+                       'validation_status', 'provenance', 'original_value_lexeme',
+                       'instrument_ref', 'sample_context', 'export_label')
 NULL_TOKEN = r'\N'
 
 
@@ -126,6 +128,9 @@ def serialize_export(events: Iterable[Mapping[str, object]],
         if row['event_id'] in by_event:
             raise ValueError('duplicate event identity in export input')
         row['event_type'] = _text(row['event_type'])  # Pass through, no taxonomy mapping.
+        for key in ('stage_code', 'process_step'):
+            if row[key] is not None:
+                row[key] = _text(row[key])  # Optional provenance text; absent stays None.
         row['operation_date'] = _date(row['operation_date'])
         row['occurred_at'] = _timestamp(row['occurred_at'])
         row['recorded_at'] = _timestamp(row['recorded_at'])
@@ -155,6 +160,9 @@ def serialize_export(events: Iterable[Mapping[str, object]],
             row[key] = _text(row[key])
         if row['validation_status'] is not None:
             row['validation_status'] = _text(row['validation_status'])  # No inferred/default status.
+        for key in ('original_value_lexeme', 'instrument_ref', 'sample_context'):
+            if row[key] is not None:
+                row[key] = _text(row[key])  # Optional source-fidelity fields; absent stays None.
         validate_demo_measurement(row)
         for key in ('measured_at', 'recorded_at'):
             row[key] = _timestamp(row[key])
@@ -176,9 +184,13 @@ def serialize_export(events: Iterable[Mapping[str, object]],
                 'line_ending': 'CRLF', 'null_token': NULL_TOKEN},
         'source_only_fields': {
             'events.operation_date': {'provided': sum(r['operation_date'] is not None for r in event_rows),
-                                      'baseline_persistence_support': False},
+                                      'baseline_persistence_support': True},
+            'events.stage_code': {'provided': sum(r['stage_code'] is not None for r in event_rows),
+                                  'baseline_persistence_support': True},
             'measurements.validation_status': {'provided': sum(r['validation_status'] is not None for r in measurement_rows),
-                                               'baseline_persistence_support': False}},
+                                               'baseline_persistence_support': False},
+            'measurements.original_value_lexeme': {'provided': sum(r['original_value_lexeme'] is not None for r in measurement_rows),
+                                                   'baseline_persistence_support': True}},
         'decimal_fidelity': 'input str unchanged; Decimal uses str; database cannot recover original input lexemes',
         'measurement_selection': 'all supplied; no canonical/latest selection or aggregation',
         'spreadsheet_safety': 'apostrophe-prefix dangerous cells; import as text; no universal save/reopen guarantee',

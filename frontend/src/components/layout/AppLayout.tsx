@@ -3,6 +3,10 @@ import { DEMO_BANNER, HELD_KPIS } from "@/domain/types";
 import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
+  { to: "/backend-operations", label: "Operasi P1 (kandidat)" },
+  { to: "/backend-production", label: "Produksi (kandidat)" },
+  { to: "/backend-distribution", label: "Distribusi (kandidat)" },
+  { to: "/backend-insights", label: "Insight (kandidat)" },
   { to: "/", label: "Dashboard Mutu Data", end: true },
   { to: "/events", label: "Ledger Event" },
   { to: "/capture", label: "Capture Cepat" },
@@ -13,12 +17,19 @@ const NAV_ITEMS = [
   { to: "/demo/evidence", label: "Bukti (fixture)" },
   { to: "/demo/export", label: "Ekspor (belum tersedia)" },
   { to: "/backend-demo", label: "Detail Backend (read-only)" },
+  { to: "/backend-demo/ledger", label: "Ledger Backend (live)" },
+  { to: "/backend-demo/data-quality", label: "Mutu Data Backend (live)" },
+  { to: "/backend-demo/master", label: "Master Data Backend (live)" },
+  { to: "/backend-demo/evidence", label: "Bukti Backend (live)" },
+  { to: "/backend-demo/review", label: "Review Backend (proposal)" },
+  { to: "/backend-demo/export", label: "Ekspor Backend (CSV live)" },
   { to: "/backend-demo/capture", label: "Capture Backend (sintetis)" },
 ];
 
 export default function AppLayout() {
   const location = useLocation();
   const backendMode = location.pathname.startsWith("/backend-demo");
+  const p1Mode = ["/backend-operations", "/backend-production", "/backend-distribution", "/backend-insights"].includes(location.pathname);
   const backendCapture = location.pathname.startsWith("/backend-demo/capture");
   const fixtureMode = location.pathname.startsWith("/demo/");
   const exportUnavailable = location.pathname === "/demo/export";
@@ -48,7 +59,7 @@ export default function AppLayout() {
             <p
               className="rounded border border-slate-200 px-2 py-1 text-xs text-slate-600"
             >
-              {backendCapture ? "Sumber: API backend sintetis (write demo)" : backendMode ? "Sumber: API backend (read-only)"
+              {p1Mode ? "Sumber: API backend P1/P2 kandidat sintetis" : backendCapture ? "Sumber: API backend sintetis (write demo)" : backendMode ? "Sumber: API backend (read-only)"
                 : exportUnavailable ? "Ekspor backend: belum tersedia" : fixtureMode ? "Sumber: fixture sintetis (read-only)" : "Sumber: DemoStore in-memory"}
             </p>
           </div>

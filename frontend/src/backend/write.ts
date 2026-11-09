@@ -1,5 +1,5 @@
 /** Synthetic local development write client. Never retries a POST. */
-import { BACKEND_MASS_BASES, BACKEND_STATUSES, isAwareTimestamp, isUUID, parseEvent, parseMeasurements } from "./contract";
+import { BACKEND_MASS_BASES, BACKEND_STATUSES, isAwareTimestamp, isISODate, isUUID, parseEvent, parseMeasurements } from "./contract";
 import type { BackendEvent, BackendMeasurement } from "./contract";
 import { assertCurrent, authSnapshot, permits, protectedJson } from './auth';
 
@@ -12,12 +12,14 @@ export type EventInput = {
   organization_id: string; site_id: string;
   event_type: "at_risk_surplus" | "actual_loss_discard";
   occurred_at: string;
+  stage_code?: string; process_step?: string; operation_date?: string;
 };
 export type MeasurementInput = {
   gross: string | null; tare: string | null; net: string | null;
   original_unit: "kg"; mass_basis: (typeof BACKEND_MASS_BASES)[number];
   observation_status: (typeof BACKEND_STATUSES)[number];
   measurement_method: string; provenance: string; measured_at: string;
+  original_value_lexeme?: string; instrument_ref?: string; sample_context?: string;
 };
 export type WriteResult<T> =
   | { kind: "saved"; value: T }
@@ -49,6 +51,8 @@ export function eventErrors(value: EventInput): Record<string, string> {
   if (value.event_type !== "at_risk_surplus" && value.event_type !== "actual_loss_discard")
     errors.event_type = "Pilih jenis event backend demo.";
   if (!isAwareTimestamp(value.occurred_at)) errors.occurred_at = "Gunakan waktu ISO dengan zona waktu, misalnya 2026-11-06T12:00:00+08:00.";
+  if (value.operation_date !== undefined && value.operation_date !== "" && !isISODate(value.operation_date))
+    errors.operation_date = "Tanggal operasi berformat YYYY-MM-DD; tidak dihitung otomatis dari waktu kejadian.";
   return errors;
 }
 
@@ -110,7 +114,13 @@ async function postOnce<T>(path: string, body: EventInput | MeasurementInput, pa
   }
 }
 
-export async function createBackendEvent(body: EventInput): Promise<WriteResult<BackendEvent>> {
+export async function createBackendEvent(input: EventInput): Promise<WriteResult<BackendEvent>> {
+  // Optional fields are omitted entirely when blank; the server never receives empty strings.
+  const { stage_code, process_step, operation_date, ...rest } = input;
+  const body: EventInput = rest;
+  if (stage_code?.trim()) body.stage_code = stage_code.trim();
+  if (process_step?.trim()) body.process_step = process_step.trim();
+  if (operation_date) body.operation_date = operation_date;
   if (Object.keys(eventErrors(body)).length) return { kind: "rejected", message: "Validasi event gagal." };
   return postOnce("/demo/v0.1/events", body, raw => {
     if (typeof raw !== "object" || raw === null || !("event_id" in raw) || typeof raw.event_id !== "string" || !isUUID(raw.event_id)) throw Error("missing server id");
@@ -120,8 +130,13 @@ export async function createBackendEvent(body: EventInput): Promise<WriteResult<
   });
 }
 
-export async function createBackendMeasurement(eventId: string, body: MeasurementInput): Promise<WriteResult<BackendMeasurement>> {
-  if (!isUUID(eventId) || Object.keys(measurementErrors(body)).length) return { kind: "rejected", message: "Validasi measurement gagal." };
+export async function createBackendMeasurement(eventId: string, input: MeasurementInput): Promise<WriteResult<BackendMeasurement>> {
+  if (!isUUID(eventId) || Object.keys(measurementErrors(input)).length) return { kind: "rejected", message: "Validasi measurement gagal." };
+  const { original_value_lexeme, instrument_ref, sample_context, ...rest } = input;
+  const body: MeasurementInput = rest;
+  if (original_value_lexeme?.trim()) body.original_value_lexeme = original_value_lexeme.trim();
+  if (instrument_ref?.trim()) body.instrument_ref = instrument_ref.trim();
+  if (sample_context?.trim()) body.sample_context = sample_context.trim();
   return postOnce(`/demo/v0.1/events/${eventId}/measurements`, body, raw => {
     // Use the existing strict runtime parser with event relation and measurement identity.
     const [measurement] = parseMeasurements([raw], eventId);

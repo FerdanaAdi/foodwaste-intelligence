@@ -11,6 +11,16 @@ import ReviewAuditPage from "./pages/ReviewAuditPage";
 import ExportPreviewPage from "./pages/ExportPreviewPage";
 import BackendEventDetailPage from "./pages/BackendEventDetailPage";
 import BackendCapturePage from "./pages/BackendCapturePage";
+import BackendLedgerPage from "./pages/BackendLedgerPage";
+import BackendDataQualityPage from "./pages/BackendDataQualityPage";
+import BackendMasterPage from "./pages/BackendMasterPage";
+import BackendEvidencePage from "./pages/BackendEvidencePage";
+import BackendReviewPage from "./pages/BackendReviewPage";
+import BackendExportLivePage from "./pages/BackendExportLivePage";
+import BackendOperationsPage from "./pages/BackendOperationsPage";
+import BackendProductionPage from "./pages/BackendProductionPage";
+import BackendDistributionPage from "./pages/BackendDistributionPage";
+import BackendInsightsPage from "./pages/BackendInsightsPage";
 import BackendAuthBoundary from "./components/layout/BackendAuthBoundary";
 import { DataQualityDashboard } from "./components/dataquality/DataQualityDashboard";
 import { dqFixtures } from "./data/dataquality/fixtures";
@@ -27,8 +37,18 @@ export default function App() {
         <Route element={<AppLayout />}>
           <Route element={<BackendAuthBoundary />}>
             <Route path="/backend-demo" element={<BackendEventDetailPage />} />
+            <Route path="/backend-demo/ledger" element={<BackendLedgerPage />} />
+            <Route path="/backend-demo/data-quality" element={<BackendDataQualityPage />} />
+            <Route path="/backend-demo/master" element={<BackendMasterPage />} />
+            <Route path="/backend-demo/evidence" element={<BackendEvidencePage />} />
+            <Route path="/backend-demo/review" element={<BackendReviewPage />} />
+            <Route path="/backend-demo/export" element={<BackendExportLivePage />} />
             <Route path="/backend-demo/capture" element={<BackendCapturePage />} />
             <Route path="/backend-demo/events/:eventId" element={<BackendEventDetailPage />} />
+            <Route path="/backend-operations" element={<BackendOperationsPage />} />
+            <Route path="/backend-production" element={<BackendProductionPage />} />
+            <Route path="/backend-distribution" element={<BackendDistributionPage />} />
+            <Route path="/backend-insights" element={<BackendInsightsPage />} />
           </Route>
           <Route path="/demo/data-quality" element={<DataQualityDashboard data={dqFixtures} />} />
           <Route path="/demo/master-data" element={<ReferenceCatalog items={referenceFixtures} />} />

@@ -3,7 +3,7 @@ import { isUUID } from './contract';
 
 export type Identity = { principal_id: string; auth_context_id: string };
 export type Session = Identity & { csrf_token: string; sites: { site_id: string; permissions: string[] }[] };
-export type Intent = { intent_id: string; site_id: string; kind: 'event' | 'measurement';
+export type Intent = { intent_id: string; site_id: string; kind: 'event' | 'measurement' | 'p1';
   event_id: string | null; result_id: string | null; state: 'registered' | 'committed'; registered_at: string };
 type State = { phase: 'checking' | 'anonymous' | 'ready' | 'blocked'; session: Session | null;
   site: string; generation: number; message: string; intents: Intent[] | null };
@@ -29,12 +29,18 @@ function identity(response: Response): Identity {
   return { principal_id, auth_context_id };
 }
 function same(a: Identity, b: Identity) { return a.principal_id === b.principal_id && a.auth_context_id === b.auth_context_id; }
+const KNOWN_PERMISSIONS = ['event.create','event.read','measurement.create','measurement.read',
+  'p1.create','receipt.create','receipt.read','lot.create','lot.read','movement.create','movement.read',
+  'menu.create','menu.read','recipe.create','recipe.read','batch.create','batch.read',
+  'delivery.create','delivery.read','service.create','service.read','link.create','link.read',
+  'disposition.create','disposition.read','trends.read','kpi.read','costref.create','costref.read','alert.read','alert.ack'];
+
 export function parseSession(raw: unknown, response: Response): Session {
   const value = raw as Session;
   const owner = identity(response);
   if (!value || !same(value, owner) || !/^[a-f0-9]{64}$/.test(value.csrf_token) || !Array.isArray(value.sites) ||
       value.sites.some(s => !s || !isUUID(s.site_id) || !Array.isArray(s.permissions) ||
-        s.permissions.some(p => !['event.create','event.read','measurement.create','measurement.read'].includes(p))))
+        s.permissions.some(p => !KNOWN_PERMISSIONS.includes(p))))
     throw new AuthFailure(401);
   return value;
 }
@@ -170,7 +176,7 @@ export async function readIntents(): Promise<Intent[]> {
   if (!response.ok || !Array.isArray(value)) throw new Error('Intent privat belum dapat diverifikasi.');
   const records = value as Intent[];
   if (records.some(r => !r || !isUUID(r.intent_id) || !isUUID(r.site_id) ||
-      !['event','measurement'].includes(r.kind) || !['registered','committed'].includes(r.state) ||
+      !['event','measurement','p1'].includes(r.kind) || !['registered','committed'].includes(r.state) ||
       (r.event_id !== null && !isUUID(r.event_id)) || (r.result_id !== null && !isUUID(r.result_id)))) throw new Error('Respons intent tidak valid.');
   const scoped = records.filter(r => r.site_id === state.site);
   assertCurrent(context);

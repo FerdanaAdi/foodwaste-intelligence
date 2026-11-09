@@ -69,8 +69,11 @@ def test_event_without_measurement_stays_one_event_and_no_zero_mass_row():
     assert rows(bundle.measurements_csv) == []
     row = rows(bundle.events_csv)[0]
     assert row['operation_date'] == NULL_TOKEN
+    # demo_0002 persists operation_date/stage_code and measurement lexemes (WP-01).
     assert metadata(bundle)['source_only_fields']['events.operation_date'] == {
-        'provided': 0, 'baseline_persistence_support': False}
+        'provided': 0, 'baseline_persistence_support': True}
+    assert metadata(bundle)['source_only_fields']['measurements.original_value_lexeme'] == {
+        'provided': 0, 'baseline_persistence_support': True}
 
 
 def test_repeated_measurements_keep_two_identities_without_multiplying_event_rows():

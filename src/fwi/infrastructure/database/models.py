@@ -1,11 +1,12 @@
 """Reversible Demo v0.1 mappings, not an approved production schema."""
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-from sqlalchemy import (Boolean, CheckConstraint, DateTime, ForeignKey, ForeignKeyConstraint,
-                        Integer, Numeric, String, UniqueConstraint, Uuid)
+from sqlalchemy import (Boolean, CheckConstraint, Date, DateTime, ForeignKey, ForeignKeyConstraint,
+                        Index, Integer, Numeric, String, UniqueConstraint, Uuid)
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -38,6 +39,9 @@ class WasteEvent(Base):
     organization_id: Mapped[UUID] = mapped_column(ForeignKey("organizations.organization_id"))
     site_id: Mapped[UUID] = mapped_column(Uuid)
     event_type: Mapped[str] = mapped_column(String)
+    stage_code: Mapped[str | None] = mapped_column(String)
+    process_step: Mapped[str | None] = mapped_column(String)
+    operation_date: Mapped[date | None] = mapped_column(Date)
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
@@ -62,8 +66,107 @@ class Measurement(Base):
     measurement_method: Mapped[str] = mapped_column(String)
     provenance: Mapped[str] = mapped_column(String)
     observation_status: Mapped[str] = mapped_column(String)
+    original_value_lexeme: Mapped[str | None] = mapped_column(String)
+    instrument_ref: Mapped[str | None] = mapped_column(String)
+    sample_context: Mapped[str | None] = mapped_column(String)
     measured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class MasterReference(Base):
+    """Append-only versioned reference row; values come only from approved sources."""
+    __tablename__ = "master_references"
+    __table_args__ = (
+        CheckConstraint("status IN ('active', 'inactive')", name="master_reference_status"),
+        CheckConstraint("version >= 1", name="master_reference_version"),
+        CheckConstraint("supersedes_version IS NULL OR supersedes_version < version", name="master_reference_supersedes"),
+        UniqueConstraint("namespace", "code", "version"),
+    )
+    reference_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    namespace: Mapped[str] = mapped_column(String)
+    code: Mapped[str] = mapped_column(String)
+    version: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String)
+    label: Mapped[str] = mapped_column(String)
+    definition: Mapped[str | None] = mapped_column(String)
+    supersedes_version: Mapped[int | None] = mapped_column(Integer)
+    changed_by: Mapped[str] = mapped_column(String)
+    changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    note: Mapped[str | None] = mapped_column(String)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class EvidenceReference(Base):
+    """Evidence METADATA row only; file bytes/retention wait for ADR-005.
+
+    ``storage_ref`` is an internal binding; it is never serialized to output.
+    """
+    __tablename__ = "evidence_references"
+    __table_args__ = (
+        CheckConstraint("target_kind IN ('event', 'measurement')", name="evidence_target_kind"),
+        CheckConstraint("kind IN ('reference', 'attachment')", name="evidence_kind"),
+        CheckConstraint("verification IN ('unverified', 'needs_review', 'verified')", name="evidence_verification"),
+        CheckConstraint("availability IN ('available', 'unavailable', 'expired', 'unknown')", name="evidence_availability"),
+        Index("ix_evidence_target", "target_kind", "target_id"),
+    )
+    evidence_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    target_kind: Mapped[str] = mapped_column(String)
+    target_id: Mapped[UUID] = mapped_column(Uuid)
+    kind: Mapped[str] = mapped_column(String)
+    source: Mapped[str] = mapped_column(String)
+    title: Mapped[str] = mapped_column(String)
+    recorded_by: Mapped[str] = mapped_column(String)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    method: Mapped[str | None] = mapped_column(String)
+    provenance: Mapped[str | None] = mapped_column(String)
+    verification: Mapped[str] = mapped_column(String)
+    availability: Mapped[str] = mapped_column(String)
+    storage_ref: Mapped[str | None] = mapped_column(String)
+    note: Mapped[str | None] = mapped_column(String)
+    recorded_at_system: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class ReviewDecision(Base):
+    """One provisional review decision; only request_correction exists today."""
+    __tablename__ = "review_decisions"
+    __table_args__ = (
+        CheckConstraint("target_kind IN ('event', 'measurement')", name="review_decision_kind"),
+        CheckConstraint("decision IN ('request_correction')", name="review_decision_action"),
+        Index("ix_review_target", "target_kind", "target_id"),
+    )
+    review_decision_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    target_kind: Mapped[str] = mapped_column(String)
+    target_id: Mapped[UUID] = mapped_column(Uuid)
+    decision: Mapped[str] = mapped_column(String)
+    actor_id: Mapped[str] = mapped_column(String)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    rationale: Mapped[str] = mapped_column(String)
+    source: Mapped[str] = mapped_column(String)
+    provenance: Mapped[str] = mapped_column(String)
+    recorded_at_system: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class CorrectionProposal(Base):
+    """Append-only proposal; never applied. state is constrained to 'proposed'."""
+    __tablename__ = "correction_proposals"
+    __table_args__ = (
+        CheckConstraint("target_kind IN ('event', 'measurement')", name="correction_target_kind"),
+        CheckConstraint("state IN ('proposed')", name="correction_state"),
+        Index("ix_correction_target", "target_kind", "target_id"),
+    )
+    correction_record_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    target_kind: Mapped[str] = mapped_column(String)
+    target_id: Mapped[UUID] = mapped_column(Uuid)
+    original_values: Mapped[dict] = mapped_column(JSONB)
+    proposed_values: Mapped[dict] = mapped_column(JSONB)
+    actor_id: Mapped[str] = mapped_column(String)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    reason: Mapped[str] = mapped_column(String)
+    source: Mapped[str] = mapped_column(String)
+    provenance: Mapped[str] = mapped_column(String)
+    review_decision_id: Mapped[UUID | None] = mapped_column(ForeignKey("review_decisions.review_decision_id"))
+    state: Mapped[str] = mapped_column(String)
+    recorded_at_system: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class AuditEvent(Base):
@@ -129,7 +232,7 @@ class LoginThrottle(Base):
 
 class WriteIntent(Base):
     __tablename__ = 'auth_write_intents'
-    __table_args__ = (CheckConstraint("kind IN ('event','measurement')", name='intent_kind'),
+    __table_args__ = (CheckConstraint("kind IN ('event','measurement','p1')", name='intent_kind'),
                      CheckConstraint("state IN ('registered','committed')", name='intent_state'))
     intent_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     principal_id: Mapped[UUID] = mapped_column(ForeignKey('auth_principals.principal_id'))

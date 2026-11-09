@@ -6,6 +6,10 @@ export interface BackendEvent {
   organization_id: string;
   site_id: string;
   event_type: "at_risk_surplus" | "actual_loss_discard";
+  stage_code?: string | null;
+  process_step?: string | null;
+  /** Supplied independently by the operator; never derived from occurred_at. */
+  operation_date?: string | null;
   occurred_at: string;
   recorded_at: string;
 }
@@ -20,6 +24,10 @@ export interface BackendMeasurement {
   observation_status: (typeof BACKEND_STATUSES)[number];
   provenance: string;
   measurement_method: string;
+  /** Operator-typed representation (e.g. '2.40'); absent when not provided. */
+  original_value_lexeme?: string | null;
+  instrument_ref?: string | null;
+  sample_context?: string | null;
   measured_at: string;
   recorded_at: string;
 }
@@ -46,11 +54,25 @@ export function isAwareTimestamp(value: unknown): value is string {
     && hour <= 23 && minute <= 59 && second <= 59
     && (match[7] === "Z" || (Number(match[8]) <= 23 && Number(match[9]) <= 59));
 }
+export const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
+export function isISODate(value: unknown): value is string {
+  if (typeof value !== "string" || !ISO_DATE.test(value)) return false;
+  const [year, month, day] = value.slice(0, 10).split("-").map(Number);
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return month >= 1 && month <= 12 && day >= 1 && day <= days[month - 1];
+}
+export function optionalText(value: unknown): asserts value is string | null | undefined {
+  requireValue(value === null || value === undefined || (typeof value === "string" && value.trim().length > 0 && value.length <= 1000));
+}
 export function parseEvent(value: unknown, expectedId: string): BackendEvent {
   const record = object(value);
   for (const key of ["event_id", "organization_id", "site_id"]) uuid(record[key]);
   requireValue(record.event_id === expectedId);
   requireValue(record.event_type === "at_risk_surplus" || record.event_type === "actual_loss_discard");
+  for (const key of ["stage_code", "process_step"] as const) optionalText(record[key]);
+  optionalText(record.operation_date);
+  if (record.operation_date != null) requireValue(isISODate(record.operation_date));
   requireValue(isAwareTimestamp(record.occurred_at) && isAwareTimestamp(record.recorded_at));
   return record as unknown as BackendEvent;
 }
@@ -69,6 +91,7 @@ export function parseMeasurements(value: unknown, expectedId: string): BackendMe
     for (const key of ["measurement_method", "provenance"]) {
       requireValue(typeof record[key] === "string" && record[key].trim().length > 0);
     }
+    for (const key of ["original_value_lexeme", "instrument_ref", "sample_context"] as const) optionalText(record[key]);
     requireValue(isAwareTimestamp(record.measured_at) && isAwareTimestamp(record.recorded_at));
     const absent = record.observation_status === "missing" || record.observation_status === "not_measured";
     for (const key of ["gross", "tare", "net"]) {

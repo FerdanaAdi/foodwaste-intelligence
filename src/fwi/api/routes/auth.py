@@ -45,7 +45,7 @@ class Credentials(BaseModel):
 class IntentInput(BaseModel):
     model_config = ConfigDict(extra='forbid')
     site_id: UUID
-    kind: Literal['event', 'measurement']
+    kind: Literal['event', 'measurement', 'p1']
     event_id: UUID | None = None
 
 
@@ -104,6 +104,10 @@ def register_intent(body: IntentInput, request: Request, response: Response):
         security.permit(access, body.site_id, body.kind + '.create')
         if body.kind == 'measurement':
             event = access.session.get(WasteEvent, body.event_id) if body.event_id else None
+            if not event or event.site_id != body.site_id:
+                raise security.Denied(404)
+        elif body.kind == 'p1' and body.event_id is not None:
+            event = access.session.get(WasteEvent, body.event_id)
             if not event or event.site_id != body.site_id:
                 raise security.Denied(404)
         elif body.event_id is not None:

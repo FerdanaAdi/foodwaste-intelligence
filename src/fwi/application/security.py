@@ -28,9 +28,20 @@ HASHER = PasswordHasher(time_cost=3, memory_cost=65536, parallelism=4,
                         hash_len=32, salt_len=16, type=Type.ID)
 # Equal-cost unknown-account verification; no usable credential is persisted.
 DUMMY_HASH = HASHER.hash(secrets.token_urlsafe(32))
+P1_READ_ACTIONS = frozenset({
+    'receipt.read', 'lot.read', 'movement.read', 'menu.read', 'recipe.read', 'batch.read',
+    'delivery.read', 'service.read', 'link.read', 'disposition.read', 'trends.read',
+    'kpi.read', 'costref.read', 'alert.read',
+})
+P1_WRITE_ACTIONS = frozenset({
+    'p1.create', 'receipt.create', 'lot.create', 'movement.create', 'menu.create',
+    'recipe.create', 'batch.create', 'delivery.create', 'service.create', 'link.create',
+    'disposition.create', 'costref.create', 'alert.ack',
+})
 PERMISSIONS = {
-    'writer': frozenset({'event.create', 'event.read', 'measurement.create', 'measurement.read'}),
-    'reader': frozenset({'event.read', 'measurement.read'}),
+    'writer': frozenset({'event.create', 'event.read', 'measurement.create', 'measurement.read'})
+    | P1_READ_ACTIONS | P1_WRITE_ACTIONS,
+    'reader': frozenset({'event.read', 'measurement.read'}) | P1_READ_ACTIONS,
 }
 
 

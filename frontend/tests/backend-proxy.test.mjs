@@ -58,18 +58,44 @@ test("W-25: only the exact scoped routes and methods forward, and unrelated secr
       const response = await fetch(origin + url, { method: "POST", headers: jsonHeaders, body: "{}" });
       assert.equal(response.status, 200);
     }
+    // P0 integration adds explicit list/read and metadata/proposal routes.
+    // This backend is a proxy recorder; API validation/authorization stays server-side.
+    const site = "22222222-2222-4222-8222-222222222222";
+    const target = "33333333-3333-4333-8333-333333333333";
+    const addedReads = [
+      `/demo/v0.1/events?site_id=${site}&page=1&page_size=20`,
+      `/demo/v0.1/data-quality?site_id=${site}`,
+      "/demo/v0.1/master/namespaces",
+      "/demo/v0.1/master/references?namespace=stage&include_inactive=true",
+      "/demo/v0.1/master/references/history?namespace=stage&code=synthetic",
+      `/demo/v0.1/evidence?target_kind=event&target_id=${target}`,
+      `/demo/v0.1/reviews?target_kind=event&target_id=${target}`,
+      `/demo/v0.1/export?site_id=${site}&dataset=events`,
+    ];
+    for (const url of addedReads) assert.equal((await fetch(origin + url, { headers: jsonHeaders })).status, 200);
+    for (const url of ["/demo/v0.1/evidence", "/demo/v0.1/reviews"]) {
+      assert.equal((await fetch(origin + url, { method: "POST", headers: jsonHeaders, body: "{}" })).status, 200);
+    }
+    // New read routes do not grant arbitrary query keys or master/export writes.
+    for (const url of ["/demo/v0.1/events?unexpected=1", "/demo/v0.1/export?unexpected=1",
+      "/demo/v0.1/evidence?site_id=unapproved", "/demo/v0.1/reviews?unexpected=1"]) {
+      assert.equal((await fetch(origin + url, { headers: jsonHeaders })).status, 404);
+    }
+    for (const url of ["/demo/v0.1/master/references", "/demo/v0.1/export"]) {
+      assert.equal((await fetch(origin + url, { method: "POST", headers: jsonHeaders, body: "{}" })).status, 404);
+    }
     for (const method of ["PUT", "PATCH", "DELETE", "OPTIONS"]) {
       assert.equal((await fetch(origin + path, { method })).status, 405);
     }
-    assert.equal((await fetch(origin + "/demo/v0.1/events")).status, 404);
+    assert.equal((await fetch(origin + "/demo/v0.1/events?unexpected=1")).status, 404);
     assert.equal((await fetch(origin + path + "/audit")).status, 404);
     assert.equal((await fetch(origin + "/demo/v0.1/events/bad/measurements", { method: "POST", headers: jsonHeaders, body: "{}" })).status, 404);
     assert.equal((await fetch(origin + path, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).status, 404);
     assert.equal((await fetch(origin + "/demo/v0.1/events", { method: "POST", headers: { origin: 'https://127.0.0.1:5173' }, body: "{}" })).status, 415);
     assert.equal((await fetch(origin + "/demo/v0.1/events", { method: "POST", headers: { "content-type": "application/json", origin: "http://evil.example" }, body: "{}" })).status, 403);
-    assert.equal(received.length, 4);
+    assert.equal(received.length, 4 + addedReads.length + 2);
     assert.ok(received.every(r => (!r.headers.cookie || r.headers.cookie === '__Host-fwi-session=synthetic-test-only') && !r.headers.authorization && !r.headers["proxy-authorization"]));
-    assert.deepEqual(received.map(r => r.method), ["GET", "GET", "POST", "POST"]);
+    assert.deepEqual(received.map(r => r.method), ["GET", "GET", "POST", "POST", ...addedReads.map(() => "GET"), "POST", "POST"]);
   } finally {
     if (vite) await vite.close();
     backend.closeAllConnections();
@@ -115,4 +141,34 @@ test('proxy forwards only FWI cookies and removes credential/peer spoofing heade
   assert.equal(headers.has('authorization') || headers.has('proxy-authorization') || headers.has('x-forwarded-for') || headers.has('forwarded'), false);
   assert.equal(proxy.target, 'https://127.0.0.1:8000');
   assert.equal(proxy.secure, true);
+});
+
+
+test('combined P0/P1/P2 allowlists preserve TLS, query and method boundaries', async () => {
+  const loaded = await loadConfigFromFile({ command: 'serve', mode: 'development' });
+  let handler;
+  for (const plugin of loaded.config.plugins) {
+    if (plugin?.name === 'fwi-synthetic-demo-scoped-proxy')
+      plugin.configureServer({ middlewares: { use: fn => { handler = fn; } } });
+  }
+  const key = Object.keys(loaded.config.server.proxy)[0];
+  const probe = (url, method='GET') => {
+    let status, forwarded = false;
+    handler({ url, method, socket: { encrypted: false }, headers: {
+      host: '127.0.0.1:5173', origin: 'https://127.0.0.1:5173', 'content-type': 'application/json' } },
+      { set statusCode(value) { status = value; }, end() {} }, () => { forwarded = true; });
+    assert.equal(forwarded, false);
+    return status;
+  };
+  const site = '22222222-2222-4222-8222-222222222222';
+  for (const path of [`/p1/v0.1/trends?site_id=${site}&date_from=2026-11-01&date_to=2026-11-09`,
+    `/p1/v0.1/receipts?site_id=${site}`, '/p2/v0.1/recommendations/rules', '/p2/v0.1/kpi',
+    `/demo/v0.1/events?site_id=${site}`]) {
+    assert.equal(new RegExp(key).test(path), true);
+    assert.equal(probe(path), 503); // allowed route still cannot bypass TLS
+  }
+  assert.equal(probe('/p1/v0.1/receipts', 'POST'), 503);
+  assert.equal(probe('/p1/v0.1/receipts?unexpected=1'), 404);
+  assert.equal(probe('/p2/v0.1/recommendations/rules?unexpected=1'), 404);
+  assert.equal(probe('/p1/v0.1/receipts', 'DELETE'), 405);
 });

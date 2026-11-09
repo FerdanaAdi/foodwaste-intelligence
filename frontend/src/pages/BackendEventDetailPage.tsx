@@ -14,6 +14,17 @@ function Fields({ values }: { values: Record<string, ReactNode> }) {
   return <dl className="grid gap-3 sm:grid-cols-2">{Object.entries(values).map(([label, value]) =>
     <div key={label}><dt className="text-sm text-slate-600">{label}</dt><dd className="break-all whitespace-pre-wrap">{value}</dd></div>)}</dl>;
 }
+function MeasurementSummary({ records }: { records: BackendMeasurement[] }) {
+  return <section className="space-y-3 rounded border bg-white p-4" aria-label="Ringkasan pengukuran backend">
+    <h2 className="text-lg font-semibold">Ringkasan pengukuran event ini</h2>
+    <Fields values={{
+      "Jumlah measurement pada respons": records.length,
+      ...Object.fromEntries((Object.keys(statuses) as BackendMeasurement["observation_status"][]).map(status =>
+        [`Jumlah record ${status}`, records.filter(m => m.observation_status === status).length])),
+    }} />
+    <p className="text-sm">Hitungan record dari respons measurement untuk event ini. Hitungan ini tidak menyatakan kelengkapan atau mutu data; status validasi tidak tersedia pada API.</p>
+  </section>;
+}
 function BackendDetail({ id }: { id: string }) {
   const [event, setEvent] = useState<Result<BackendEvent>>({ kind: "loading" });
   const [measurements, setMeasurements] = useState<Result<BackendMeasurement[]>>({ kind: "loading" });
@@ -29,7 +40,11 @@ function BackendDetail({ id }: { id: string }) {
     return () => { active = false; controller.abort(); };
   }, [id, attempt]);
   return <div className="space-y-5" aria-live="polite">
-    <button className="rounded border px-4 py-2" onClick={() => setAttempt(value => value + 1)}>Muat ulang / coba lagi</button>
+    <button className="rounded border px-4 py-2" onClick={() => {
+      setEvent({ kind: "loading" });
+      setMeasurements({ kind: "loading" });
+      setAttempt(value => value + 1);
+    }}>Muat ulang / coba lagi</button>
     {event.kind === "loading" && <LoadingState label="Memuat event backend…" />}
     {event.kind === "error" && <ServiceUnavailableState detail={`Event gagal diambil: ${event.message} Riwayat tidak ditampilkan tanpa event yang terverifikasi.`} />}
     {event.kind === "ready" && <>
@@ -38,6 +53,7 @@ function BackendDetail({ id }: { id: string }) {
         <Fields values={{ "Event UUID": event.value.event_id, "Organization UUID": event.value.organization_id, "Site UUID": event.value.site_id,
           "Jenis event backend (provisional)": event.value.event_type, "Waktu kejadian (offset asli respons)": event.value.occurred_at, "Waktu pencatatan event": event.value.recorded_at }} />
       </section>
+      {measurements.kind === "ready" && <MeasurementSummary records={measurements.value} />}
       <section className="space-y-3" aria-label="Riwayat pengukuran backend">
         <h2 className="text-lg font-semibold">Seluruh riwayat pengukuran</h2>
         {measurements.kind === "loading" && <LoadingState label="Memuat riwayat pengukuran…" />}

@@ -200,3 +200,13 @@ it('delayed private intent body from an old actor cannot overwrite the new actor
   expect(document.querySelector('a[href*="99999999"]')).toBeNull();
   expect(authSnapshot().intents).toEqual([]);
 });
+
+
+it('accepts the actual combined P1/P2 session permissions including alert reads and acknowledgements', async () => {
+  const combined = { ...sessionA, sites: sessionA.sites.map(site => ({ ...site,
+    permissions: [...site.permissions, 'p1.create', 'trends.read', 'alert.read', 'alert.ack'] })) };
+  vi.stubGlobal('fetch', routes(combined, async () => { throw new Error('no domain call expected'); }));
+  await checkSession();
+  expect(authSnapshot().phase).toBe('ready');
+  expect(authSnapshot().session?.sites[0]?.permissions).toContain('alert.ack');
+});
