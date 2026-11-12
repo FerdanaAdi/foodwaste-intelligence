@@ -89,13 +89,18 @@ export const test = base.extend({
 export async function login(page, backend, name = 'site_a_writer') {
   await page.goto('/backend-demo');
   await page.waitForLoadState('networkidle');
+  await expect(page.getByRole('alert')).toContainText('Silakan masuk dengan akun sintetis.');
   await page.getByLabel('Akun sintetis').fill(name);
+  await expect(page.getByLabel('Akun sintetis')).toHaveValue(name);
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(resolve)));
   await page.getByLabel('Password', { exact: true }).evaluate((input, secret) => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, secret);
     input.dispatchEvent(new Event('input', { bubbles: true }));
   }, backend.passwords[name]);
+  // Check only length; never put a password in assertion output. No submit/retry has occurred.
+  await expect.poll(() => page.getByLabel('Password', { exact: true }).evaluate(input => input.value.length)).toBe(backend.passwords[name].length);
   await page.getByRole('button', { name: 'Masuk', exact: true }).click();
-  await expect(page.getByLabel('Site berizin')).toBeVisible({ timeout: 15000 });
+  await expect(page.getByLabel('Lokasi dapur yang dapat diakses')).toBeVisible({ timeout: 15000 });
 }
 
 export const SITE_A = '22222222-2222-4222-8222-222222222222';

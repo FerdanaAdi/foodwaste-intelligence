@@ -1,0 +1,68 @@
+# M2 UX integration — tested local candidate, 2026-11-12
+
+- Worktree/branch: `D:/Projects/fwi-m2-ux-integration` / `codex/fwi-m2-ux-integration`; parent main `5ade7a69292209646acb821cbb4f92147ed7fa94`. UX sources: application `91019ddee4175ee44cf67d7f7c3acc72cebecdc7`, documentation/source HEAD `09d4149535f197d6be3d26321eadd379aac87ee3`. Original source worktrees preserved.
+- Integrated the existing 23 frontend paths and two documents: forest/teal responsive layout, operator-language capture/measurement, persistent ledger/detail and contextual proposal-only review, metadata-only evidence; fixtures/candidates retain explicit source labels. No redesign, API, backend, migration, dependency or methodology changes.
+- M1 export authentication/401/403/404, response binding, stale-session/site defenses and CSV/metadata JSON fixes remain byte-for-byte unchanged. Strict BigInt instant parser, original-row/audit/count/refresh assertions retained; the added UX journey now checks instant equality and full original-row nonmutation rather than local clock substrings.
+- Executed in this M2 worktree: `npm run typecheck` PASS; `npm test -- --maxWorkers=2` 374 PASS/0 FAIL/SKIP across 27 files; `npm run build` PASS; E2E JavaScript syntax, `python -B -I scripts/verify_kit.py`, whitespace checks PASS. Full backend regression and Linux CI NOT RUN for this frontend-only integration; previous M1 results are historical, not new passes.
+- `npm --prefix frontend run test:e2e:ci`: Windows installed Chrome -> real HTTPS React/Vite/FastAPI -> PostgreSQL18.6, 17 PASS/0 FAIL/SKIP/flaky; one worker/retries0. Covers navigation, 390px mobile, desktop screenshots, same-event remeasurement, Decimal/null/zero, error recovery, three-role/site denial, expired/revoked sessions, export, proposal-only/metadata-only, W-20/W-21 and J-07 UNKNOWN without replay. Uses the existing explicitly authorized temporary-TLS test profile; Vite verifies backend CA. Not a Linux/production TLS claim.
+- Cleanup verified: 17 run-owned UUID schemas removed; two pre-existing schemas retain exact names/OIDs/owners; temporary TLS key/cert removed; no OS trust-store change or UAT services/data used. Eight desktop/mobile screenshots are retained under `frontend/browser-evidence/ux01-*.png` (ignored). External evidence/manifest: `C:/Users/Ferdana/.codex/visualizations/2026/11/03/01a19f89-4e72-7322-8dcd-dbf34844a92a/FWI_M2_20261112/`.
+- Existing warnings remain: React act/jsdom navigation diagnostics, Windows connection reset/bounded graceful-shutdown, framework deprecations and >500kB bundle. Multisite label clarity is existing UX-03 backlog; no WCAG, Figma, field, scientific or final Owner acceptance claimed.
+- M1 DONE; M2 IN PROGRESS pending Owner UX acceptance; M3/M4/M5 IN PROGRESS; M6 PENDING. Gate B, AC-14/source reconciliation, OD-P1-02, effective/reportable measurement selection, physical evidence storage and applied corrections remain OPEN. OP-08/FI-02/NI-03 HELD. Destructive downgrade on non-disposable databases remains prohibited; protective fix is still required before that lifecycle work.
+- Owner authorizes at most one local M2 commit after exact-scope/tests verification; no push/PR/merge/deployment. Next concrete action is Owner desktop/mobile acceptance of the integrated four flows; committing does not close M2.
+
+## Historical UX source notes (preserved; superseded by the M2 result above)
+
+# UX-01 v0.3 — Real synthetic web application
+
+Status: implemented locally on `codex/fwi-ux-01-web-v03`; Owner web UAT pending. No commit, push, deployment or production acceptance.
+Baseline: `45dd600678fbdf67819375636f553b6d280e925c`. The original integration checkout is preserved.
+Design ZIP SHA-256: `acfa30a72e0d205399c15f5dc40f5828e9d82ec10a9fa5801f3718a1eca37a1e`; CRC checked. Only presentation was adapted; prototype fixture CRUD, personas and state switches were excluded.
+
+## Operator walkthrough
+
+1. Open `https://127.0.0.1:5173/backend-demo/capture` while the owned local session is active. The temporary loopback certificate is not installed in Windows trust. Check the exact address before accepting its local browser warning.
+2. Sign in as `site_a_writer` using the password entered in the private local dialog. `site_a_reader` is read-only on Site A; `site_b_writer` belongs to Site B. No credential is stored in this document.
+3. **Catat kejadian**: choose the actual backend event type, enter source date/time and explicit offset. Optional operation date is independent. Save once; the server UUID becomes the measurement context automatically.
+4. **Catat pengukuran**: choose observation status and mass basis; supply gross/tare/net as decimal text, method, provenance and source time. Save, then enter a second observation on the same context. Missing/not-measured use null; measured-zero still requires the backend's gross/tare/net contract.
+5. **Riwayat kejadian**: filter/page the persistent ledger, follow **Lihat rincian**, inspect all distinct observations and count-only summary, then refresh. Technical IDs remain inspectable. No effective measurement or mass total is selected.
+6. **Ajukan pemeriksaan** on the event or an observation opens a verified contextual target. Save a review/proposal with reason/source/provenance. History compares original and proposed values; originals remain unchanged. There is no applied correction or physical file upload.
+7. Other operational/P1/P2/backend/fixture routes remain under **Operasional, analisis & sumber lain**, each with its source label. No backend error falls back to fixtures.
+8. Use **Keluar** to end the authenticated session. Finish the local run using **Selesai & bersihkan sesi ini** in the local session window; this stops owned processes and removes only its guarded UUID schema and temporary TLS files. Request a new local session for another presentation; never reuse an unknown schema or publish the unauthenticated development server.
+
+## Implementation boundary
+
+- Existing GET/POST `/demo/v0.1/events`, GET event, GET/POST event measurements, GET/POST reviews; existing auth/intent and ledger query contracts. No new endpoint, schema, dependency or migration.
+- Shared `OperationalUI` presents headings, context, exact vocabulary labels, policy notices, technical details, contextual review links and explicit-source timestamps. `ux01.css` provides forest/teal desktop/mobile styling and visible keyboard focus.
+- Backend numbers remain exact strings. ISO source text preserves fractional seconds and explicit offset; no site timezone or operation date is derived. Timestamp controls are presentation, not methodological validation.
+- Two detail GETs are not an atomic snapshot. API absence of validation status is disclosed. OD-P1-02 stays OPEN; raw observations do not become reportable mass.
+- Capture retains server-protected intent handling. Evidence/Review retain their conservative tab-scoped UNKNOWN markers; successful generic GET cannot unlock them. No automatic POST replay or cross-device exactly-once guarantee.
+- Existing session binding, focus/privacy closure, reader denial, site isolation and held KPI behavior remain. Gate B, physical evidence, applied corrections and unresolved source/methodology decisions are not accepted by this UX change.
+
+## Verification
+
+Exact commands and final outcomes are recorded in `frontend/browser-evidence/ux01-web-verification.json` (local ignored evidence) and the task report. Screenshots `ux01-desktop-*.png` and `ux01-mobile-*.png` show actual React -> HTTPS Vite proxy -> FastAPI -> PostgreSQL, not the standalone HTML prototype.
+Owner's disposable-schema exception permits existing migrations only in guarded `fwi_test/fwi_demo_test` UUID schemas. Test schema creation/removal uses existing role/database/PG18/name/OID/owner guards. No dev/legacy schema or OS trust store is changed.
+No claim of complete FWI-03 validation, independent UX review, field validation, full MVP or production readiness. OP-08/FI-02/NI-03 remain HELD.
+
+Final actual results: frontend 338 PASS; targeted PostgreSQL/backend 45 PASS; HTTPS proxy 4 PASS; Windows Chrome browser 17 PASS, retries 0/workers 1; typecheck, production build, kit and whitespace PASS. Full backend suite NOT RUN in this UI task. Initial browser run 11 PASS/6 FAIL is retained separately; selector/readiness/logout synchronization was corrected, focused 6 PASS, then final full 17 PASS. No automatic replay was introduced.
+
+Residual diagnostics: Windows Python asyncio connection-reset and bounded graceful-shutdown messages occurred even in passing browser runs; guarded cleanup verified all 40 owned test schemas absent. Backend emitted 19 warnings; existing production bundle exceeds 500 kB. The separate live Owner schema is intentionally retained until the session window is closed. Owner acceptance and independent delta review are PENDING.
+
+Changed-file inventory and raw SHA-256 are in the local verification manifest. The live private dialog was restarted once because a hidden-console launch concealed its first window; the visible interactive controller then started successfully. Neither attempt reused Owner/legacy resources.
+
+## Current verification update — FWI-UX-GATE-03-FIX (2026-11-11)
+The results and resource descriptions above are historical UX-01 evidence, not the final combined package result. Owner acceptance remains pending.
+- Contextual review: manual write identity is read-only, only verified in-event targets may dispatch, and event/site/auth-generation checks repeat immediately before POST. Manual lookup/write remains available without event context. These guards do not replace backend authorization.
+- Empty advanced ISO input clears the date/time/offset controls; no timezone or date is inferred. Site labels remain unchanged; a stable-identity display proposal and its test plan are external review material, not implemented behavior.
+- Commands: `npm --prefix frontend test -- tests/ux01-operational.test.tsx tests/backend-auth.test.tsx tests/unknown-post-guard.test.tsx --maxWorkers=2` (42 PASS); `npm --prefix frontend test -- tests/unknown-post-guard.test.tsx --maxWorkers=1` (12 PASS); full `npm --prefix frontend test -- --maxWorkers=2` and `--maxWorkers=1` (353 PASS each). No skipped/retried cases or unhandled test errors.
+- `npm --prefix frontend run typecheck`, `npm --prefix frontend run build`, repository kit and whitespace checks PASS. Original `npm --prefix frontend run test:e2e:ci`: Windows installed Chrome, real HTTPS Vite/FastAPI/PostgreSQL18.6, 17 PASS with one worker and zero retries. Existing migrations ran only in guarded disposable test schemas; no schema/backend changes. Full backend regression NOT RUN.
+- All 17 owned test schemas cleaned, temporary test TLS removed. UAT services restored using the existing schema and credentials; 27 non-auth table fingerprints unchanged. Current URL remains https://127.0.0.1:5173/backend-demo/capture; anonymous approved-Origin session returns401.
+- Full-suite failures before correction are preserved: 339 PASS/8 FAIL/1 unhandled error, including four stale auth loading-label assertions and four UNKNOWN timeouts. The isolated old UNKNOWN12 PASS never erased those failures. Input-event scheduling was reduced without dropping security assertions; unmount/auth abort occurs before mock restoration. Both current full-worker configurations now pass.
+- Warnings remain: jsdom navigation not implemented, some React act diagnostics, Windows connection-reset/bounded shutdown, backend deprecations and the >500kB bundle. No broad WCAG, production, methodological or full-MVP acceptance is claimed. Independent FWI-UX-GATE-03-RR is now completed: MAJOR-01/02/03 and timestamp CLOSED; multisite-label clarity remains BACKLOG UX-03. Reviewer recommendation: READY FOR OWNER GIT APPROVAL; final Owner acceptance remains pending.
+
+## Independent re-review closure and local packaging authority — 2026-11-11
+FWI-UX-GATE-03-RR is complete. Three MAJOR findings (context target, auth assertions, UNKNOWN suite stability) and the timestamp finding are CLOSED. The location-label issue is BACKLOG UX-03; no further authentication/UI implementation is included here.
+Provenance: Owner-supplied `FWI_UX_GATE03_RR_Independent_Review_2026-11-11.md`, SHA-256 `b74da5f477621f29c97e62586f2728bfdfd74d04c14deec4ec068d643122412d`, preserved externally with the reconciliation manifest. The report is a supplied transcript/handoff; this documentation task did not independently rerun the reviewer session.
+The reviewer directly executed 42 targeted tests: 14 operational, 16 auth and 12 UNKNOWN, plus typecheck and repository/whitespace verification. Full frontend Vitest353 PASS (one and two workers), original Windows Chrome HTTPS E2E17 PASS and build PASS remain verified Codex log evidence; do not represent those as full E2E rerun by the independent reviewer.
+The independent recommendation is READY FOR OWNER GIT APPROVAL. Owner separately authorized exactly two bounded LOCAL commits, subject to allowlist/hash/staged-diff gates. Permission does not mean a commit/integration already occurred; final operation evidence and commit SHAs must be reported after execution. No push, PR, merge or deployment is authorized.
+Older PENDING entries above are historical and superseded for independent-review status by this section. Final Owner usability/product acceptance, full accessibility and production/field readiness are not established. Gate B, AC-14 methodology, OD-P1-02, applied corrections and physical evidence storage remain OPEN; OP-08/FI-02/NI-03 remain HELD. All23 frontend paths remain byte-identical to the reviewed FIX manifest; only these two documents were reconciled.

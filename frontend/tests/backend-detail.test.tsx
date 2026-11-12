@@ -29,10 +29,10 @@ describe("backend detail read-only route", () => {
     const user = userEvent.setup();
     mockAPI(); mount();
     await screen.findByText(fixture.measurement.measurement_id);
-    await user.click(screen.getByRole('link', { name: 'Kembali: tambah pengukuran pada event ini' }));
-    await screen.findByText(/Event dikonfirmasi:/);
-    expect(screen.getByRole('button', { name: 'Simpan measurement ke event ini' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Simpan event backend' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('link', { name: 'Tambah Pengukuran pada Kejadian Ini' }));
+    await screen.findByText(/Kejadian telah dibaca/);
+    expect(screen.getByRole('button', { name: 'Simpan pengukuran' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Simpan kejadian' })).not.toBeInTheDocument();
     for (const call of domainCalls()) expect(call[1]?.method).toBe('GET');
   });
   it("renders every observation, exact decimal/null and separate timestamps without totals", async () => {
@@ -42,20 +42,20 @@ describe("backend detail read-only route", () => {
         : observation_status === "measured_zero" ? { gross: "0.4", tare: "0.4", net: "0" } : {}),
     })));
     mount();
-    expect(screen.getByText("Memuat event backend…")).toBeInTheDocument();
-    await screen.findByText("Estimasi (estimated)");
+    expect(screen.getByText("Memuat catatan kejadian…")).toBeInTheDocument();
+    await screen.findByText("Perkiraan berat");
     expect(screen.getAllByRole("article")).toHaveLength(5);
-    expect(summaryCount("Jumlah measurement pada respons")).toHaveTextContent(/^5$/);
+    expect(summaryCount("Jumlah pengukuran")).toHaveTextContent(/^5$/);
     for (const status of ["observed", "estimated", "missing", "measured_zero", "not_measured"]) {
-      expect(summaryCount(`Jumlah record ${status}`)).toHaveTextContent(/^1$/);
+      expect(summaryCount(`Jumlah: ${{observed:"Hasil pengukuran tercatat",estimated:"Perkiraan berat",missing:"Berat belum tersedia",measured_zero:"Diukur, hasil 0 kg",not_measured:"Belum diukur"}[status]}`)).toHaveTextContent(/^1$/);
     }
     expect(screen.getByText(/Dua GET dibaca terpisah, bukan snapshot atomik/)).toBeInTheDocument();
-    expect(within(screen.getByRole("region", { name: summaryName })).getByText(/tidak menyatakan kelengkapan atau mutu data/)).toBeInTheDocument();
+    expect(within(screen.getByRole("region", { name: summaryName })).getByText(/bukan penilaian kelengkapan/)).toBeInTheDocument();
     expect(screen.getAllByLabelText(`Net: ${fixture.measurement.net} kg`)).toHaveLength(2);
-    expect(screen.getAllByLabelText(/: Tidak tersedia \(null\)/)).toHaveLength(6);
+    expect(screen.getAllByLabelText(/: Berat belum tersedia/)).toHaveLength(6);
     expect(screen.getAllByLabelText(/: 0\.4 kg$/)).toHaveLength(2);
     expect(screen.getAllByLabelText(/: 0 kg$/)).toHaveLength(3);
-    expect(screen.getByText(fixture.event.occurred_at)).toBeInTheDocument();
+    expect(screen.getAllByText(fixture.event.occurred_at)[0]).toBeInTheDocument();
     expect(screen.getByText(fixture.event.recorded_at)).toBeInTheDocument();
     expect(screen.getAllByText("as_served")).toHaveLength(5);
     expect(screen.queryByText("Ditimbang")).not.toBeInTheDocument();
@@ -81,10 +81,10 @@ describe("backend detail read-only route", () => {
   });
   it("empty success differs from failed history", async () => {
     mockAPI([]); mount();
-    await screen.findByText(/Belum ada measurement untuk event/);
-    expect(summaryCount("Jumlah measurement pada respons")).toHaveTextContent(/^0$/);
+    await screen.findByText(/Kejadian ini belum memiliki pengukuran/);
+    expect(summaryCount("Jumlah pengukuran")).toHaveTextContent(/^0$/);
     for (const status of ["observed", "estimated", "missing", "measured_zero", "not_measured"]) {
-      expect(summaryCount(`Jumlah record ${status}`)).toHaveTextContent(/^0$/);
+      expect(summaryCount(`Jumlah: ${{observed:"Hasil pengukuran tercatat",estimated:"Perkiraan berat",missing:"Berat belum tersedia",measured_zero:"Diukur, hasil 0 kg",not_measured:"Belum diukur"}[status]}`)).toHaveTextContent(/^0$/);
     }
     expect(screen.queryByRole("article")).not.toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
@@ -102,7 +102,7 @@ describe("backend detail read-only route", () => {
     mount();
     expect(await screen.findByRole("alert")).toHaveTextContent("Riwayat gagal diambil");
     expect(screen.getByText("at_risk_surplus")).toBeInTheDocument();
-    expect(screen.queryByText(/Belum ada measurement untuk event/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Kejadian ini belum memiliki pengukuran/)).not.toBeInTheDocument();
     expect(screen.queryByRole("region", { name: summaryName })).not.toBeInTheDocument();
   });
   it("rejects malformed history instead of rendering partial observations", async () => {
@@ -149,7 +149,7 @@ describe("backend detail read-only route", () => {
     await act(async () => { resolveOld(response(fixture.event)); });
     await waitFor(() => expect(screen.queryByText(id)).not.toBeInTheDocument());
     expect(screen.getByText(secondId)).toBeInTheDocument();
-    expect(summaryCount("Jumlah measurement pada respons")).toHaveTextContent(/^0$/);
+    expect(summaryCount("Jumlah pengukuran")).toHaveTextContent(/^0$/);
   });
 });
 
@@ -158,11 +158,11 @@ describe("backend event measurement count summary", () => {
     mockAPI([fixture.measurement, { ...fixture.measurement, measurement_id: "55555555-5555-4555-8555-555555555555" }]);
     mount();
     await screen.findByRole("region", { name: summaryName });
-    expect(summaryCount("Jumlah measurement pada respons")).toHaveTextContent(/^2$/);
-    expect(summaryCount("Jumlah record observed")).toHaveTextContent(/^2$/);
-    expect(summaryCount("Jumlah record measured_zero")).toHaveTextContent(/^0$/);
+    expect(summaryCount("Jumlah pengukuran")).toHaveTextContent(/^2$/);
+    expect(summaryCount("Jumlah: Hasil pengukuran tercatat")).toHaveTextContent(/^2$/);
+    expect(summaryCount("Jumlah: Diukur, hasil 0 kg")).toHaveTextContent(/^0$/);
     expect(screen.getAllByRole("article")).toHaveLength(2);
-    expect(within(screen.getByRole("region", { name: "Detail event backend" })).getAllByText(id)).toHaveLength(1);
+    expect(within(screen.getByRole("region", { name: "Rincian catatan kejadian" })).getAllByText(id)).toHaveLength(1);
     expect(screen.getAllByLabelText(`Net: ${fixture.measurement.net} kg`)).toHaveLength(2);
     expect(domainCalls()).toHaveLength(2);
     for (const call of domainCalls()) expect(call[1]?.method).toBe("GET");
@@ -177,12 +177,12 @@ describe("backend event measurement count summary", () => {
     }));
     mount();
     await waitFor(() => expect(domainCalls()).toHaveLength(2));
-    if (pendingKind === "measurements") await screen.findByRole("region", { name: "Detail event backend" });
-    else expect(screen.getByText("Memuat event backend…")).toBeInTheDocument();
+    if (pendingKind === "measurements") await screen.findByRole("region", { name: "Rincian catatan kejadian" });
+    else expect(screen.getByText("Memuat catatan kejadian…")).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: summaryName })).not.toBeInTheDocument();
     await act(async () => resolve(response(pendingKind === "measurements" ? [fixture.measurement] : fixture.event)));
     await screen.findByRole("region", { name: summaryName });
-    expect(summaryCount("Jumlah measurement pada respons")).toHaveTextContent(/^1$/);
+    expect(summaryCount("Jumlah pengukuran")).toHaveTextContent(/^1$/);
   });
 
   it("hides old counts during refresh and replaces them only with the new successful response", async () => {
@@ -192,15 +192,15 @@ describe("backend event measurement count summary", () => {
     vi.stubGlobal("fetch", vi.fn((url: string) => refreshing && url.endsWith("/measurements")
       ? pending : Promise.resolve(response(url.endsWith("/measurements") ? [fixture.measurement] : fixture.event))));
     mount();await screen.findByRole("region", { name: summaryName });
-    expect(summaryCount("Jumlah measurement pada respons")).toHaveTextContent(/^1$/);
+    expect(summaryCount("Jumlah pengukuran")).toHaveTextContent(/^1$/);
     refreshing = true;
     await userEvent.setup().click(screen.getByRole("button", { name: /Muat ulang/ }));
     expect(screen.queryByRole("region", { name: summaryName })).not.toBeInTheDocument();
     await screen.findByText("Memuat riwayat pengukuran…");
     await act(async () => resolve(response([])));
     await screen.findByRole("region", { name: summaryName });
-    expect(summaryCount("Jumlah measurement pada respons")).toHaveTextContent(/^0$/);
-    expect(screen.getByText(/Belum ada measurement untuk event/)).toBeInTheDocument();
+    expect(summaryCount("Jumlah pengukuran")).toHaveTextContent(/^0$/);
+    expect(screen.getByText(/Kejadian ini belum memiliki pengukuran/)).toBeInTheDocument();
     expect(screen.queryByRole("article")).not.toBeInTheDocument();
     for (const call of domainCalls()) expect(call[1]?.method).toBe("GET");
   });
@@ -208,9 +208,9 @@ describe("backend event measurement count summary", () => {
   it.each([401, 403])("session/action HTTP %s closes private counts without fixture fallback", async status => {
     vi.stubGlobal("fetch", vi.fn(async () => response({}, status)));
     mount();
-    await screen.findByRole("heading", { name: "Masuk backend sintetis" });
+    await screen.findByRole("heading", { name: "Masuk ke FWI" });
     expect(screen.queryByRole("region", { name: summaryName })).not.toBeInTheDocument();
-    expect(screen.queryByRole("region", { name: "Detail event backend" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Rincian catatan kejadian" })).not.toBeInTheDocument();
     expect(screen.queryByText("EVT-DEMO-2026-0001")).not.toBeInTheDocument();
     for (const call of domainCalls()) expect(call[1]?.method).toBe("GET");
   });
@@ -219,9 +219,9 @@ describe("backend event measurement count summary", () => {
     vi.stubGlobal("fetch", vi.fn(async (url: string) => url.endsWith("/measurements") ? response({}, status) : response(fixture.event)));
     mount();
     expect(await screen.findByRole("alert")).toHaveTextContent(String(status));
-    expect(screen.getByRole("region", { name: "Detail event backend" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Rincian catatan kejadian" })).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: summaryName })).not.toBeInTheDocument();
-    expect(screen.queryByText(/Belum ada measurement untuk event/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Kejadian ini belum memiliki pengukuran/)).not.toBeInTheDocument();
   });
 
   it("does not summarize successful measurements when the event cannot be verified", async () => {

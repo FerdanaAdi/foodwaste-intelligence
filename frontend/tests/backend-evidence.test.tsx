@@ -29,7 +29,7 @@ describe("FR-005 backend evidence page", () => {
     mount();
     await query(user);
     expect(await screen.findByText(/Catatan kebersihan bin sintetis/)).toBeInTheDocument();
-    expect(screen.getByText(/ketersediaan: unknown/)).toBeInTheDocument();
+    expect(screen.getByText(/ketersediaan: Belum diketahui/)).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent(/1 metadata bukti/);
   });
 
@@ -38,7 +38,7 @@ describe("FR-005 backend evidence page", () => {
     vi.stubGlobal("fetch", vi.fn(async () => response([])));
     mount();
     await query(user);
-    expect(await screen.findByText(/ketersediaan berkas menunggu ADR-005/)).toBeInTheDocument();
+    expect(await screen.findByText(/Ini tidak membuktikan ada atau tidaknya berkas fisik/)).toBeInTheDocument();
   });
 
   it("cross-site/absent target is denied without leaking details", async () => {
@@ -64,4 +64,24 @@ describe("FR-005 backend evidence page", () => {
     await user.click(screen.getByRole("button", { name: /Simpan metadata bukti/ }));
     expect(await screen.findByText(/Jangan kirim ulang/)).toBeInTheDocument();
   });
+});
+
+it('UX02C payload: complete evidence input is identical to the pre-copy contract', async () => {
+ const user=userEvent.setup();const fetchMock=vi.fn(async(_url:string,options?:RequestInit)=>response(options?.method==='POST'?record:[],options?.method==='POST'?201:200));vi.stubGlobal('fetch',fetchMock);mount();
+ await user.type(screen.getByLabelText(/UUID target \(tulis\)/),EVENT_ID);
+ await user.type(screen.getByLabelText(/Sumber bukti/),'synthetic_note');await user.type(screen.getByLabelText(/^Judul/),'Catatan uji');
+ await user.type(screen.getByLabelText(/Waktu catat/),'2026-11-04T07:10:00+08:00');
+ await user.click(screen.getByRole('button',{name:/Simpan metadata bukti/}));
+ const posts=fetchMock.mock.calls.filter(c=>c[1]?.method==='POST');expect(posts).toHaveLength(1);
+ expect(JSON.parse(posts[0][1]!.body as string)).toEqual({target_kind:'event',target_id:EVENT_ID,kind:'reference',source:'synthetic_note',title:'Catatan uji',recorded_at:'2026-11-04T07:10:00+08:00',availability:'unknown',verification:'unverified'});
+});
+it('UX02C presentation does not imply upload or turn unknown availability into available', async () => {
+ const user=userEvent.setup();vi.stubGlobal('fetch',vi.fn(async()=>response([record])));mount();
+ expect(screen.getByRole('heading',{name:'Informasi Bukti Pendukung'})).toBeVisible();
+ expect(screen.getByText(/^Yang disimpan adalah informasi tentang bukti/)).toBeVisible();
+ const availability=screen.getByLabelText('Ketersediaan');expect(availability).toHaveValue('unknown');
+ expect(availability.querySelector('option[value="unknown"]')).toHaveTextContent('Belum diketahui');
+ await query(user);expect(await screen.findByText(/ketersediaan: Belum diketahui/)).toBeVisible();
+ expect(screen.getByText(/Kode jenis:/)).not.toBeVisible();
+ expect(document.querySelector('input[type="file"]')).toBeNull();expect(screen.queryByRole('link',{name:/unduh|unggah/i})).not.toBeInTheDocument();
 });

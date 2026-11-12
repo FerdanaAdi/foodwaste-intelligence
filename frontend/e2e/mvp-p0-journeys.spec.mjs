@@ -1,3 +1,4 @@
+import { fillTimestamp, openSourceDetails } from './ux-helpers.mjs';
 /** FWI MVP-P0 authorized browser journeys (Tasks: ledger, DQ, master, evidence,
  *  review, export) over real Vite->FastAPI->PostgreSQL with temporary loopback TLS.
  *  No DemoStore fallback, no automatic POST replay; evidence from DB snapshots. */
@@ -30,55 +31,56 @@ test.beforeEach(async ({ page, backend }) => { await login(page, backend); });
 
 async function createEvent(page, { stage = 'preparation', operationDate = '2026-11-06' } = {}) {
   await page.goto('/backend-demo/capture');
-  await page.getByLabel('Jenis event backend provisional').selectOption('at_risk_surplus');
-  if (stage) await page.getByLabel(/Stage code \(opsional\)/).fill(stage);
-  await page.getByLabel(/Tanggal operasi \(opsional/).fill(operationDate);
-  await page.getByLabel('Waktu kejadian ISO-8601 dengan offset').fill('2026-11-06T12:00:00+08:00');
+  await page.getByLabel('Jenis kejadian').selectOption('at_risk_surplus');
+  if (stage) await page.getByLabel(/Tahap kegiatan \(opsional\)/).fill(stage);
+  await page.getByLabel(/Tanggal kegiatan dapur \(opsional/).fill(operationDate);
+  await fillTimestamp(page, 'Tanggal dan waktu kejadian', '2026-11-06T12:00:00+08:00');
   const response = page.waitForResponse(r => new URL(r.url()).pathname === '/demo/v0.1/events' && r.request().method() === 'POST');
-  await page.getByRole('button', { name: 'Simpan event backend', exact: true }).click();
+  await page.getByRole('button', { name: 'Simpan kejadian', exact: true }).click();
   const created = await response;
   if (created.status() !== 201) console.log('EVENT POST BODY', await created.text());
   expect(created.status()).toBe(201);
-  await expect(page.getByText(/Event disimpan:/)).toBeVisible();
+  await expect(page.getByText(/Kejadian berhasil dicatat./)).toBeVisible();
   const eventId = new URL(page.url()).searchParams.get('event');
   expect(eventId).toMatch(/^[0-9a-f-]{36}$/);
   return eventId;
 }
 
 async function fillMeasurement(page, { gross, tare, net, lexeme } = {}) {
-  await page.getByLabel(/^Observation status/).selectOption('observed');
-  await page.getByLabel(/^Mass basis provisional/).selectOption('cooked');
-  await page.getByLabel('gross (kg)', { exact: true }).fill(gross);
-  await page.getByLabel('tare (kg)', { exact: true }).fill(tare);
-  await page.getByLabel('net (kg)', { exact: true }).fill(net);
+  await page.getByLabel(/^Kondisi hasil pengukuran/).selectOption('observed');
+  await page.getByLabel(/^Kondisi pangan saat diukur/).selectOption('cooked');
+  await page.getByLabel('Berat total termasuk wadah (kg)', { exact: true }).fill(gross);
+  await page.getByLabel('Berat wadah (kg)', { exact: true }).fill(tare);
+  await page.getByLabel('Berat pangan tanpa wadah (kg)', { exact: true }).fill(net);
+  await openSourceDetails(page);
   await page.getByLabel(/Nilai asal diketik apa adanya/).fill(lexeme ?? net);
-  await page.getByLabel('Measurement method', { exact: true }).fill('synthetic_ci_scale');
-  await page.getByLabel('Provenance sintetis', { exact: true }).fill('FWI MVP-P0 browser journey');
-  await page.getByLabel('Waktu pengukuran ISO-8601 dengan offset').fill('2026-11-06T12:02:00+08:00');
+  await page.getByLabel('Bagaimana berat diperoleh?', { exact: true }).fill('synthetic_ci_scale');
+  await page.getByLabel('Dari mana data ini berasal?', { exact: true }).fill('FWI MVP-P0 browser journey');
+  await fillTimestamp(page, 'Tanggal dan waktu pengukuran', '2026-11-06T12:02:00+08:00');
 }
 
 async function submitMeasurement(page, eventId) {
   const response = page.waitForResponse(r => new URL(r.url()).pathname === `/demo/v0.1/events/${eventId}/measurements` && r.request().method() === 'POST');
-  await page.getByRole('button', { name: 'Simpan measurement ke event ini', exact: true }).click();
+  await page.getByRole('button', { name: 'Simpan pengukuran', exact: true }).click();
   expect((await response).status()).toBe(201);
-  await expect(page.getByText(/Measurement tersimpan:/)).toBeVisible();
+  await expect(page.getByText(/Pengukuran tersimpan./)).toBeVisible();
 }
 
 test('J-01..J-03: ledger, repeat measurement, DQ, master, evidence, review stay consistent', async ({ page, backend }, testInfo) => {
   // 3. Create Waste Event (with stage + operation_date), 4-6. Ledger + filter + detail.
   const eventId = await createEvent(page);
   await page.goto('/backend-demo/ledger');
-  await expect(page.getByText(/Ledger Event — LIVE BACKEND/)).toBeVisible();
-  await expect(page.getByRole('status')).toContainText('1 dari 1 event');
-  await page.getByLabel(/Tanggal operasi dari/).fill('2026-11-06');
+  await expect(page.getByText(/Riwayat Kejadian Sisa Pangan/)).toBeVisible();
+  await expect(page.getByRole('status')).toContainText('1 dari 1 kejadian');
+  await page.getByLabel(/Tanggal kegiatan dapur dari/).fill('2026-11-06');
   await page.getByRole('button', { name: 'Terapkan filter' }).click();
-  await expect(page.getByRole('status')).toContainText('1 dari 1 event'); // operation_date filter matches
-  await page.getByLabel(/Tanggal operasi dari/).fill('2027-01-01');
+  await expect(page.getByRole('status')).toContainText('1 dari 1 kejadian'); // operation_date filter matches
+  await page.getByLabel(/Tanggal kegiatan dapur dari/).fill('2027-01-01');
   await page.getByRole('button', { name: 'Terapkan filter' }).click();
-  await expect(page.getByText(/Tidak ada event pada scope\/filter ini/)).toBeVisible();
-  await page.getByLabel(/Tanggal operasi dari/).fill('2026-11-06');
+  await expect(page.getByText(/Belum ada kejadian yang cocok dengan pilihan ini/)).toBeVisible();
+  await page.getByLabel(/Tanggal kegiatan dapur dari/).fill('2026-11-06');
   await page.getByRole('button', { name: 'Terapkan filter' }).click();
-  await page.getByRole('link', { name: eventId }).click();
+  await page.getByRole('link', { name: 'Lihat rincian', exact: true }).filter({ hasText: 'Lihat rincian' }).click();
   await expect(page).toHaveURL(new RegExp(`/backend-demo/events/${eventId}$`));
 
   // 7-8. First and repeated measurement on the SAME event.
@@ -90,7 +92,7 @@ test('J-01..J-03: ledger, repeat measurement, DQ, master, evidence, review stay 
 
   // 9-10. Event stays one; decimals + lexemes preserved in PostgreSQL.
   await page.goto('/backend-demo/ledger');
-  await expect(page.getByRole('status')).toContainText('1 dari 1 event'); // no join multiplication
+  await expect(page.getByRole('status')).toContainText('1 dari 1 kejadian'); // no join multiplication
   const mid = await backend.snapshot();
   expect(mid.counts).toMatchObject({ waste_events: 1, measurements: 2 });
   expect(mid.data.measurements.map(m => m.net).sort()).toEqual(['1.90', '2.00']);
@@ -101,8 +103,8 @@ test('J-01..J-03: ledger, repeat measurement, DQ, master, evidence, review stay 
   // 11-13. Live DQ: distinct statuses, counts reconcile with the database.
   await page.goto(`/backend-demo/capture?event=${eventId}`);
   await fillMeasurement(page, { gross: '0.4', tare: '0.4', net: '0' });
-  await page.getByLabel(/^Observation status/).selectOption('measured_zero');
-  await page.getByLabel('net (kg)', { exact: true }).fill('0.00');
+  await page.getByLabel(/^Kondisi hasil pengukuran/).selectOption('measured_zero');
+  await page.getByLabel('Berat pangan tanpa wadah (kg)', { exact: true }).fill('0.00');
   await submitMeasurement(page, eventId);
   const otherEvent = await createEvent(page, { stage: 'serving', operationDate: '2026-11-07' });
   await page.goto('/backend-demo/data-quality');
@@ -143,17 +145,16 @@ test('J-01..J-03: ledger, repeat measurement, DQ, master, evidence, review stay 
   expect(withEvidence.data.evidence_references[0].storage_ref).toBeNull();
 
   // 16-17. Correction proposal on the event; original record unchanged.
-  await page.goto('/backend-demo/review');
-  await page.getByLabel(/Jenis target/).nth(1).selectOption('event');
-  await page.getByLabel(/UUID target \(tulis\)/).fill(eventId);
-  await page.getByLabel(/^Alasan/).fill('Waktu kejadian tercatat terlalu dini dari browser journey');
-  await page.getByLabel('Sumber review', { exact: true }).fill('synthetic_reviewer');
-  await page.getByLabel('Provenance', { exact: true }).fill('FWI MVP-P0 browser journey');
+  await page.goto(`/backend-demo/review?event=${eventId}`);
+  await page.getByLabel(/^Catatan yang ingin diperiksa/).selectOption('event:'+eventId);
+  await page.getByLabel(/^Apa yang perlu diperiksa/).fill('Tanggal dan waktu kejadian tercatat terlalu dini dari browser journey');
+  await page.getByLabel('Sumber pemeriksaan', { exact: true }).fill('synthetic_reviewer');
+  await page.getByLabel('Asal keterangan', { exact: true }).fill('FWI MVP-P0 browser journey');
   await page.getByLabel(/Usulan waktu kejadian baru/).fill('2026-11-06T12:30:00+08:00');
   const reviewResponse = page.waitForResponse(r => new URL(r.url()).pathname === '/demo/v0.1/reviews' && r.request().method() === 'POST');
-  await page.getByRole('button', { name: 'Simpan usulan (proposal)' }).click();
+  await page.getByRole('button', { name: 'Kirim Usulan Pemeriksaan' }).click();
   expect((await reviewResponse).status()).toBe(201);
-  await expect(page.getByText(/PROPOSAL — belum efektif/)).toBeVisible();
+  await expect(page.getByText(/Belum ada perubahan otomatis/)).toBeVisible();
   const proposed = await backend.snapshot();
   expect(proposed.data.correction_proposals).toHaveLength(1);
   expect(proposed.data.correction_proposals[0].state).toBe('proposed');
@@ -180,7 +181,7 @@ test('J-01..J-03: ledger, repeat measurement, DQ, master, evidence, review stay 
   // 21. Refresh persistence across the whole journey.
   await page.goto('/backend-demo/ledger');
   await page.reload();
-  await expect(page.getByRole('status')).toContainText('2 dari 2 event');
+  await expect(page.getByRole('status')).toContainText('2 dari 2 kejadian');
   const refreshed = await backend.snapshot();
   expect(refreshed.counts).toMatchObject({ waste_events: 2, measurements: 3, evidence_references: 1 });
   expect(refreshed.data.waste_events.find(e => e.event_id === eventId)).toEqual(beforeReviewEvent);
@@ -217,7 +218,7 @@ test('J-04: authorized export delivers exact CSV, scope headers; foreign site co
   expect((await page.request.get(`/demo/v0.1/export?site_id=${SITE_B}&dataset=events`, { headers: { origin: ORIGIN } })).status()).toBe(404);
 
   // 20. Unauthorized export: another principal probing site A is concealed.
-  await page.getByRole('button', { name: 'Keluar', exact: true }).click();
+  await Promise.all([page.waitForResponse(r => new URL(r.url()).pathname === '/auth/logout' && r.request().method() === 'POST' && r.status() === 200), page.getByRole('button', { name: 'Keluar', exact: true }).click()]);
   await login(page, backend, 'site_b_writer');
   expect((await page.request.get(`/demo/v0.1/export?site_id=${SITE_A}&dataset=events`, { headers: { origin: ORIGIN } })).status()).toBe(404);
   const own = await page.request.get(`/demo/v0.1/export?site_id=${SITE_B}&dataset=events`, { headers: { origin: ORIGIN } });
@@ -247,11 +248,11 @@ test('J-05: failed API shows error state and recovers; responsive 390px layout s
   await expect(page.getByRole('button', { name: 'Terapkan filter' })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.goto(`/backend-demo/capture?event=${eventId}`);
-  await expect(page.getByRole('button', { name: 'Simpan measurement ke event ini', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Simpan pengukuran', exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto('/backend-demo/ledger');
-  await expect(page.getByRole('status')).toContainText('1 dari 1 event');
+  await expect(page.getByRole('status')).toContainText('1 dari 1 kejadian');
 });
 
 test('J-07: ambiguous evidence POST stays LOCKED; GET success never unlocks', async ({ page, backend }) => {
@@ -298,9 +299,9 @@ test('J-06: expired session closes every new private surface at once', async ({ 
   const eventId = await createEvent(page);
   await backend.expireSessions();
   await page.goto('/backend-demo/ledger');
-  await expect(page.getByRole('heading', { name: 'Masuk backend sintetis' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Masuk ke FWI' })).toBeVisible();
   await page.goto('/backend-demo/data-quality');
-  await expect(page.getByRole('heading', { name: 'Masuk backend sintetis' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Masuk ke FWI' })).toBeVisible();
   expect((await page.request.get('/demo/v0.1/events?site_id=' + SITE_A, { headers: { origin: ORIGIN } })).status()).toBe(401);
   expect((await backend.snapshot()).counts.waste_events).toBe(1); // data persists server-side
 });
@@ -322,8 +323,8 @@ test('INT-P1/P2: reportability, real three-role sessions, site denial and global
   expect(single.per_basis[0].aggregation.eligible_mass).toBeNull();
   expect(single.per_basis[0].aggregation.raw_observed_mass).toBe(decimal);
   await fillMeasurement(page, { gross: '0.4', tare: '0.4', net: '0', lexeme: '0' });
-  await page.getByLabel(/^Mass basis provisional/).selectOption('raw');
-  await page.getByLabel(/^Observation status/).selectOption('measured_zero');
+  await page.getByLabel(/^Kondisi pangan saat diukur/).selectOption('raw');
+  await page.getByLabel(/^Kondisi hasil pengukuran/).selectOption('measured_zero');
   await submitMeasurement(page, eventId);
   const committed = await backend.snapshot();
   expect(committed.counts.waste_events).toBe(1);
@@ -356,8 +357,8 @@ test('INT-P1/P2: reportability, real three-role sessions, site denial and global
   expect((await backend.snapshot()).sha256).toBe(beforeReads.sha256);
   for (const role of ['site_a_writer', 'site_a_reader', 'site_b_writer']) {
     if (role !== 'site_a_writer') {
-      await page.getByRole('button', { name: 'Keluar', exact: true }).click();
-      await expect(page.getByRole('heading', { name: 'Masuk backend sintetis' })).toBeVisible();
+      await Promise.all([page.waitForResponse(r => new URL(r.url()).pathname === '/auth/logout' && r.request().method() === 'POST' && r.status() === 200), page.getByRole('button', { name: 'Keluar', exact: true }).click()]);
+      await expect(page.getByRole('heading', { name: 'Masuk ke FWI' })).toBeVisible();
       await login(page, backend, role);
     }
     const sessionResponse = await page.request.get('/auth/session', { headers: { origin: ORIGIN } });
@@ -379,4 +380,66 @@ test('INT-P1/P2: reportability, real three-role sessions, site denial and global
   }
   expect(errors).toEqual([]);
   await testInfo.attach('combined-reportability-evidence', { body: JSON.stringify({ eventId, single, multiple, console_page_errors: errors }), contentType: 'application/json' });
+});
+
+
+test('UX-01: normal operator flow has no UUID typing; desktop/mobile preserve real records', async ({ page, backend }, testInfo) => {
+  const screenshots = async (name) => {
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(resolve)));
+    await page.screenshot({ path: `browser-evidence/ux01-${name}.png`, fullPage: true });
+    await testInfo.attach(name, { path: `browser-evidence/ux01-${name}.png`, contentType: 'image/png' });
+  };
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto('/backend-demo/capture');
+  await expect(page.getByRole('heading', { name: 'Catat Kejadian Sisa Pangan', exact: true })).toBeVisible();
+  await screenshots('desktop-event');
+  const eventId = await createEvent(page);
+  await fillMeasurement(page, { gross: '2.400000000000000001', tare: '0.400000000000000001', net: '2.00' });
+  await screenshots('desktop-measurement');
+  await submitMeasurement(page, eventId);
+  await fillMeasurement(page, { gross: '0.400', tare: '0.400', net: '0.000' });
+  await page.getByLabel(/^Kondisi hasil pengukuran/).selectOption('measured_zero');
+  await submitMeasurement(page, eventId);
+  await page.getByRole('link', { name: 'Lihat rincian kejadian →', exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/backend-demo/events/${eventId}$`));
+  await expect(page.getByRole('article')).toHaveCount(2);
+  await expect(page.getByLabel('Ringkasan pengukuran backend')).toContainText('Jumlah pengukuran2');
+  await expect(page.getByText(/Berat untuk laporan belum dapat ditentukan/)).toBeVisible();
+  const saved = await backend.snapshot();
+  expect(saved.counts).toMatchObject({ waste_events: 1, measurements: 2 });
+  expect(saved.data.measurements.every(m => m.event_id === eventId)).toBe(true);
+  expect(saved.data.measurements.find(m => m.observation_status === 'observed').gross).toBe('2.400000000000000001');
+  await page.reload();
+  await expect(page.getByRole('article')).toHaveCount(2);
+  expect((await backend.snapshot()).sha256).toBe(saved.sha256); // reads only
+  await screenshots('desktop-detail');
+  await page.getByRole('link', { name: 'Ajukan pemeriksaan', exact: true }).first().click();
+  await expect(page.getByLabel(/^Catatan yang ingin diperiksa/)).toHaveValue('event:' + eventId);
+  await page.getByLabel(/^Apa yang perlu diperiksa/).fill('Verifikasi waktu sumber sintetis UX');
+  await page.getByLabel('Sumber pemeriksaan', { exact: true }).fill('synthetic_operator');
+  await page.getByLabel('Asal keterangan', { exact: true }).fill('UX-01 actual browser');
+  await page.getByLabel(/Usulan waktu kejadian baru/).fill('2026-11-06T12:30:00+08:00');
+  const reviewResponse = page.waitForResponse(r => new URL(r.url()).pathname === '/demo/v0.1/reviews' && r.request().method() === 'POST');
+  await page.getByRole('button', { name: 'Kirim Usulan Pemeriksaan', exact: true }).click();
+  expect((await reviewResponse).status()).toBe(201);
+  await expect(page.getByRole('heading', { name: 'Catatan asli · tidak berubah' })).toBeVisible();
+  await screenshots('desktop-review');
+  const proposed = await backend.snapshot();
+  expect(proposed.data.waste_events[0]).toEqual(saved.data.waste_events[0]);
+  expect(timestampMicros(proposed.data.waste_events[0].occurred_at)).toBe(timestampMicros('2026-11-06T12:00:00+08:00'));
+  expect(proposed.data.correction_proposals[0].state).toBe('proposed');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await screenshots('mobile-review');
+  await page.goto(`/backend-demo/events/${eventId}`);
+  await expect(page.getByRole('article')).toHaveCount(2);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await screenshots('mobile-detail');
+  await page.getByRole('link', { name: 'Tambah Pengukuran pada Kejadian Ini' }).click();
+  await expect(page.getByRole('button', { name: 'Simpan pengukuran', exact: true })).toBeVisible();
+  await screenshots('mobile-measurement');
+  await page.goto('/backend-demo/ledger');
+  await expect(page.getByRole('link', { name: 'Lihat rincian', exact: true })).toHaveCount(1);
+  await screenshots('mobile-ledger');
+  expect((await backend.snapshot()).sha256).toBe(proposed.sha256);
 });

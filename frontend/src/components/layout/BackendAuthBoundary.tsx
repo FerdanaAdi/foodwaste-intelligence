@@ -55,8 +55,8 @@ export default function BackendAuthBoundary() {
     }
   }, [auth.generation, auth.phase]);
   if (legacyBlocked) return <p role="alert">Journal lama belum terikat actor. Akses ditutup untuk rekonsiliasi terotorisasi; detail tidak ditampilkan dan bukti tidak dihapus.</p>;
-  if (auth.phase !== 'ready') return <section className="space-y-4" aria-label="Autentikasi backend sintetis">
-    <h1 className="text-2xl font-bold">Masuk backend sintetis</h1>
+  if (auth.phase !== 'ready') return <section className="ux-login space-y-4" aria-label="Autentikasi backend sintetis">
+    <h1 className="text-2xl font-bold">Masuk ke FWI</h1>
     <p>Cookie sesi HttpOnly; hanya HTTPS lokal yang disetujui. Data DemoStore tetap terpisah.</p>
     {auth.message && <p role="alert">{auth.message}</p>}
     {auth.phase === 'checking' ? <p role="status">Memverifikasi sesi…</p> : <form className="space-y-3" onSubmit={e => {
@@ -70,24 +70,24 @@ export default function BackendAuthBoundary() {
     <button className="rounded border px-4 py-2" onClick={() => { invalidateAuth('', 'checking'); void checkSession(); }}>Periksa sesi (GET saja)</button>
   </section>;
   return <div ref={privateRoot} className="space-y-5">
-    <section className="rounded border bg-white p-3 space-y-2" aria-label="Sesi backend aktif">
-      <p className="break-all">Principal sintetis: {auth.session!.principal_id}</p>
-      <label className="block">Site berizin<select className="block w-full rounded border p-2" value={auth.site} onChange={e => selectSite(e.target.value)}>
-        {auth.session!.sites.map(s => <option key={s.site_id} value={s.site_id}>{s.site_id}</option>)}
+    <section className="ux-auth-session" aria-label="Sesi backend aktif">
+      <details className="ux-technical"><summary>Identitas sesi teknis</summary><p className="break-all">Principal sintetis: {auth.session!.principal_id}</p></details>
+      <label className="block">Lokasi dapur yang dapat diakses<select className="block w-full rounded border p-2" value={auth.site} onChange={e => selectSite(e.target.value)}>
+        {auth.session!.sites.map((s, index) => <option key={s.site_id} value={s.site_id}>Lokasi dapur {index + 1}</option>)}
       </select></label>
       <button className="rounded border px-4 py-2" onClick={() => { setUsername(''); setPassword(''); navigate('/backend-demo', { replace: true }); void logout(); }}>Keluar</button>
       <p className="text-sm">Draft hanya di memory dan ditutup saat sesi/site berubah atau halaman kehilangan fokus.</p>
     </section>
     {recoveryError && <p role="alert">{recoveryError}</p>}
     {auth.intents === null ? <p role="status">Memeriksa intent privat sebelum membuka data…</p> : <>
-      <section className="rounded border p-3 space-y-2" aria-label="Pemulihan intent privat">
+      <details className="ux-recovery" aria-label="Pemulihan intent privat" open={auth.intents.length > 0}><summary>Hasil penyimpanan &amp; pemulihan privat</summary>
         <h2 className="font-semibold">Intent privat untuk site aktif</h2>
         {auth.intents.map(intent => <div key={intent.intent_id}>
           {intent.state === 'registered' ? <p role="alert">UNCONFIRMED: hasil operasi belum terkonfirmasi. Jangan kirim ulang.</p>
             : <p>Hasil commit terkonfirmasi oleh server. {intent.event_id && <Link className="underline" to={`/backend-demo/events/${intent.event_id}`}>Buka hasil terkonfirmasi (GET)</Link>}</p>}
         </div>)}
         <button className="rounded border px-3 py-2" onClick={refresh}>Periksa intent (GET saja)</button>
-      </section>
+      </details>
       <div key={`${auth.session!.auth_context_id}:${auth.generation}:${auth.site}`}><Outlet /></div>
     </>}
     {auth.intents === null && <button onClick={refresh}>Coba pemulihan GET</button>}

@@ -42,7 +42,7 @@ describe("App shell", () => {
     renderApp();
     expect(screen.getByText(/Kartu dan ledger di bawah tetap memakai DemoStore/)).toBeInTheDocument();
     await user.click(screen.getByRole('link', { name: 'Mulai demo persisten' }));
-    expect(await screen.findByRole('heading', { name: 'Masuk backend sintetis' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Masuk ke FWI' })).toBeInTheDocument();
   });
   it("shows the synthetic demo banner", () => {
     renderApp();
