@@ -5,6 +5,10 @@ import { listBackendEvidence, createBackendEvidence, evidenceInputErrors,
 import { authSnapshot, permits, subscribeAuth } from "@/backend/auth";
 import { EmptyState, LoadingState, ServiceUnavailableState } from "@/components/states/DisplayStates";
 
+import { TechnicalDetails } from '@/components/operational/OperationalUI';
+const availabilityLabels: Record<string, string> = { unknown: 'Belum diketahui', available: 'Tersedia menurut catatan', unavailable: 'Tidak tersedia menurut catatan', expired: 'Masa berlaku berakhir' };
+const kindLabels: Record<string, string> = { reference: 'Referensi', attachment: 'Lampiran' };
+const verificationLabels: Record<string, string> = { unverified: 'Belum diperiksa', needs_review: 'Perlu diperiksa', verified: 'Bukti telah diperiksa' };
 const field = "w-full rounded border border-slate-300 bg-white p-2";
 const INITIAL: EvidenceInput = { target_kind: "event", target_id: "", kind: "reference",
   source: "", title: "", recorded_at: "", availability: "unknown", verification: "unverified" };
@@ -63,47 +67,47 @@ export default function BackendEvidencePage() {
 
   return <div className="space-y-6">
     <header className="space-y-2">
-      <h1 className="text-2xl font-bold">Bukti &amp; Provenance — LIVE BACKEND (sintetis)</h1>
-      <p>Metadata bukti tersimpan di PostgreSQL, tertaut ke event/measurement yang berada di site berizin. Slice ini metadata-only: tidak ada unggah berkas, unduhan, atau storage identifier (ADR-005 masih OPEN).</p>
-      <p className="text-sm text-slate-600">Status ketersediaan <code>unknown</code> tetap unknown — tidak dianggap tersedia. Bukti terverifikasi bukan pengukuran yang disetujui.</p>
+      <h1 className="text-2xl font-bold">Informasi Bukti Pendukung</h1>
+      <p>Yang disimpan adalah informasi tentang bukti, bukan berkas fisik. Unggah dan unduh berkas belum tersedia. Catatan hanya dapat diakses sesuai izin lokasi.</p>
+      <p className="text-sm text-slate-600">Ketersediaan “Belum diketahui” tidak berarti bukti tersedia. Pemeriksaan bukti bukan persetujuan hasil pengukuran.</p>
     </header>
 
     <form className="rounded border bg-white p-4 space-y-3" onSubmit={e => { e.preventDefault(); if (queryId.trim()) void runQuery(queryKind, queryId.trim()); }}>
       <div className="grid gap-3 sm:grid-cols-3">
         <label className="block">Jenis target
           <select className={field} value={queryKind} onChange={e => setQueryKind(e.target.value as EvidenceTargetKind)}>
-            <option value="event">event</option><option value="measurement">measurement</option>
+            <option value="event">Kejadian</option><option value="measurement">Pengukuran</option>
           </select>
         </label>
         <label className="block sm:col-span-2">UUID target (baca)
-          <input className={field} value={queryId} onChange={e => setQueryId(e.target.value)} placeholder="UUID event/measurement backend" />
+          <input className={field} value={queryId} onChange={e => setQueryId(e.target.value)} placeholder="Salin ID kejadian atau pengukuran" />
         </label>
       </div>
-      <button type="submit" className="rounded border px-4 py-2">Baca daftar bukti (GET)</button>
+      <p className="text-sm">Salin ID dari Detail Teknis pada rincian kejadian atau pengukurannya. Gunakan ID yang sama untuk membaca atau menambahkan informasi bukti.</p><button type="submit" className="rounded border px-4 py-2">Baca daftar bukti (GET)</button>
     </form>
 
     {loading && <LoadingState label="Memuat metadata bukti…" />}
     {!loading && error && <ServiceUnavailableState detail={error} />}
     {!loading && !error && records !== null && records.length === 0 && <EmptyState title="Belum ada metadata bukti pada target ini"
-      description="Daftar kosong bukan bukti bahwa tidak ada berkas fisik; ketersediaan berkas menunggu ADR-005." />}
+      description="Belum ada informasi bukti untuk catatan ini. Ini tidak membuktikan ada atau tidaknya berkas fisik." />}
     {!loading && !error && records !== null && records.length > 0 && <section className="space-y-2">
       <p role="status" className="text-sm">{records.length} metadata bukti (sumber: PostgreSQL berizin).</p>
       <ul className="space-y-2">
         {records.map(row => <li key={row.evidence_id} className="rounded border bg-white p-3 text-sm">
           <p className="font-semibold">{row.title}</p>
-          <p>{row.kind} · sumber: {row.source} · ketersediaan: {row.availability} · verifikasi: {row.verification}</p>
-          <p className="text-slate-600">Dicatat oleh {row.recorded_by} pada {row.recorded_at}{row.note ? ` · ${row.note}` : ""}</p>
+          <p>{kindLabels[row.kind] || 'Jenis lain dari sumber'} · sumber: {row.source} · ketersediaan: {availabilityLabels[row.availability] || 'Status lain dari sumber'} · pemeriksaan: {verificationLabels[row.verification] || 'Status lain dari sumber'}</p>
+          <p className="text-slate-600">Dicatat pada {row.recorded_at}{row.note ? ` · ${row.note}` : ""}</p><TechnicalDetails><p>ID bukti: {row.evidence_id}</p><p>Pencatat: {row.recorded_by}</p><p>Kode jenis: {row.kind} · ketersediaan: {row.availability} · pemeriksaan: {row.verification}</p></TechnicalDetails>
         </li>)}
       </ul>
     </section>}
 
     {permits('event.create') && <form onSubmit={submit} noValidate className="rounded border bg-white p-4 space-y-3">
-      <h2 className="text-lg font-semibold">Tambah metadata bukti</h2>
-      <p className="text-sm">Field opsional kosong tidak dikirim. Tidak ada kolom berkas: unggah menunggu keputusan ADR-005.</p>
+      <h2 className="text-lg font-semibold">Tambah Informasi Bukti Pendukung</h2>
+      <p className="text-sm">Bagian opsional boleh dikosongkan. Formulir ini mencatat informasi bukti; tidak mengunggah berkas.</p>
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="block">Jenis target
           <select className={field} value={input.target_kind} onChange={e => setInput(v => ({ ...v, target_kind: e.target.value as EvidenceTargetKind }))}>
-            <option value="event">event</option><option value="measurement">measurement</option>
+            <option value="event">Kejadian</option><option value="measurement">Pengukuran</option>
           </select>
         </label>
         <label className="block">UUID target (tulis){fieldErrors.target_id && <span className="text-red-700"> — {fieldErrors.target_id}</span>}
@@ -111,7 +115,7 @@ export default function BackendEvidencePage() {
         </label>
         <label className="block">Jenis bukti
           <select className={field} value={input.kind} onChange={e => setInput(v => ({ ...v, kind: e.target.value as EvidenceInput["kind"] }))}>
-            <option value="reference">reference</option><option value="attachment">attachment</option>
+            <option value="reference">Referensi</option><option value="attachment">Lampiran</option>
           </select>
         </label>
         <label className="block">Sumber bukti{fieldErrors.source && <span className="text-red-700"> — {fieldErrors.source}</span>}
@@ -125,8 +129,8 @@ export default function BackendEvidencePage() {
         </label>
         <label className="block">Ketersediaan
           <select className={field} value={input.availability} onChange={e => setInput(v => ({ ...v, availability: e.target.value as EvidenceInput["availability"] }))}>
-            <option value="unknown">unknown</option><option value="available">available</option>
-            <option value="unavailable">unavailable</option><option value="expired">expired</option>
+            <option value="unknown">Belum diketahui</option><option value="available">Tersedia menurut catatan</option>
+            <option value="unavailable">Tidak tersedia menurut catatan</option><option value="expired">Masa berlaku berakhir</option>
           </select>
         </label>
         <label className="block">Catatan (opsional)

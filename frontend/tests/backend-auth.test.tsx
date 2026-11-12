@@ -38,7 +38,7 @@ it.each([sessionB, { ...sessionA, auth_context_id: sessionB.auth_context_id }])(
     const pending = new Promise<Response>(r => { resolve = r; });
     vi.stubGlobal('fetch', routes(sessionA, async () => pending));
     mount();
-    await screen.findByText('Memuat event backend…');
+    await screen.findByText('Memuat catatan kejadian…');
     vi.stubGlobal('fetch', routes(next, async url => domainResponse(url, 'private-new-session', next)));
     await act(async () => { await checkSession(); });
     await screen.findByText('private-new-session');
@@ -55,7 +55,7 @@ it('logout cancels an in-flight protected request and ignores late private data'
     if (url === '/auth/logout') return authResponse({ logged_out: true });
     signal = options?.signal as AbortSignal; return pending;
   }));
-  mount(); await screen.findByText('Memuat event backend…');
+  mount(); await screen.findByText('Memuat catatan kejadian…');
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Keluar' })));
   await screen.findByText(/Logout terkonfirmasi/);
   expect(signal?.aborted).toBe(true);
@@ -84,7 +84,7 @@ it.each(['missing', 'mismatch'])('fails closed on %s response metadata', async m
     return response;
   }));
   await act(async () => fireEvent.click(screen.getByRole('button', { name: /Muat ulang/ })));
-  await screen.findByRole('heading', { name: 'Masuk backend sintetis' });
+  await screen.findByRole('heading', { name: 'Masuk ke FWI' });
   expect(screen.queryByText('private-A')).not.toBeInTheDocument();
   expect(screen.queryByText('private-invalid')).not.toBeInTheDocument();
 });
@@ -94,7 +94,7 @@ it.each([401, 403])('session/permission denial HTTP %s closes all private state'
   mount(); await screen.findByText('private-A');
   vi.stubGlobal('fetch', routes(sessionA, async () => authResponse({ detail: 'denied' }, status)));
   await act(async () => fireEvent.click(screen.getByRole('button', { name: /Muat ulang/ })));
-  await screen.findByRole('heading', { name: 'Masuk backend sintetis' });
+  await screen.findByRole('heading', { name: 'Masuk ke FWI' });
   expect(screen.queryByText('private-A')).not.toBeInTheDocument();
 });
 
@@ -117,7 +117,7 @@ it('keeps registered intent unconfirmed, never POSTs during refresh-style recove
   vi.stubGlobal('fetch', fetcher);
   render(<MemoryRouter initialEntries={['/backend-demo/capture']}><App /></MemoryRouter>);
   await screen.findByText(/UNCONFIRMED:/);
-  expect(screen.getByRole('button', { name: 'Simpan event backend' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Simpan kejadian' })).toBeDisabled();
   expect(fetcher.mock.calls.every(call => call[1]?.method !== 'POST')).toBe(true);
   expect(sessionStorage.getItem(CAPTURE_JOURNAL_KEY)).toBe('cccccccc-cccc-4ccc-8ccc-cccccccccccc');
 });
@@ -125,11 +125,11 @@ it('keeps registered intent unconfirmed, never POSTs during refresh-style recove
 it('permission changes reset the page and do not expose writer controls to reader', async () => {
   vi.stubGlobal('fetch', routes(sessionA, async url => domainResponse(url)));
   render(<MemoryRouter initialEntries={['/backend-demo/capture']}><App /></MemoryRouter>);
-  await screen.findByRole('button', { name: 'Simpan event backend' });
+  await screen.findByRole('button', { name: 'Simpan kejadian' });
   const reader = { ...sessionA, sites: [{ ...sessionA.sites[0], permissions: ['event.read','measurement.read'] }] };
   vi.stubGlobal('fetch', routes(reader, async url => domainResponse(url, 'reader', reader)));
   await act(async () => checkSession());
-  await waitFor(() => expect(screen.queryByRole('button', { name: 'Simpan event backend' })).not.toBeInTheDocument());
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'Simpan kejadian' })).not.toBeInTheDocument());
   expect(authSnapshot().session?.sites[0].permissions).toEqual(['event.read','measurement.read']);
 });
 
@@ -150,7 +150,7 @@ it('site switching discards a delayed GET and never renders the previous site re
   let resolve!: (value: Response) => void;
   const pending = new Promise<Response>(r => { resolve = r; });
   vi.stubGlobal('fetch', routes(multi, async () => pending));
-  mount(); await screen.findByText('Memuat event backend…');
+  mount(); await screen.findByText('Memuat catatan kejadian…');
   vi.stubGlobal('fetch', routes(multi, async () => authResponse({ detail: 'Not found' }, 404, multi)));
   await act(async () => selectSite(siteB));
   await waitFor(() => expect(authSnapshot().site).toBe(siteB));
@@ -175,7 +175,7 @@ it('login bootstraps pre-auth CSRF, uses cookies and never persists credentials'
   await user.type(await screen.findByLabelText('Akun sintetis'), 'site_a_writer');
   await user.type(screen.getByLabelText('Password'), 'synthetic-only-password');
   await user.click(screen.getByRole('button', { name: 'Masuk' }));
-  await screen.findByLabelText('Site berizin');
+  await screen.findByLabelText('Lokasi dapur yang dapat diakses');
   const loginCall = vi.mocked(fetch).mock.calls.find(call => call[0] === '/auth/login')!;
   expect(loginCall[1]?.credentials).toBe('same-origin');
   expect((loginCall[1]?.headers as Record<string,string>)['X-CSRF-Token']).toBe('c'.repeat(64));

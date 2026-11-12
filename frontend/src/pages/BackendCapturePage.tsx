@@ -10,6 +10,8 @@ import {
 import { authSnapshot, permits, subscribeAuth } from '@/backend/auth';
 import { UncertainResultState } from '@/components/states/DisplayStates';
 
+import { PageHeading, EventContext, PolicyNotice, TimestampInput, observationLabels, basisLabels } from '@/components/operational/OperationalUI';
+
 const field = "w-full rounded border border-slate-300 bg-white p-2";
 const initialMeasurement: MeasurementInput = {
   observation_status: "" as MeasurementInput["observation_status"], gross: "", tare: "", net: "", original_unit: "kg", mass_basis: "" as MeasurementInput["mass_basis"],
@@ -101,7 +103,7 @@ export default function BackendCapturePage() {
         navigate(`/backend-demo/capture?event=${encodeURIComponent(result.value.event_id)}`, { replace: true });
         setEventId(result.value.event_id); setConfirmedEvent(result.value);
         finishJournal();
-        setFeedback({ kind: "success", message: `Event disimpan: ${result.value.event_id}. Measurement ditambahkan ke event yang sama.` });
+        setFeedback({ kind: "success", message: `Kejadian berhasil dicatat. Anda dapat menambahkan pengukuran sekarang.` });
       } else if (result.kind === "rejected") {
         finishJournal(); setFeedback({ kind: "error", message: result.message });
       } else {
@@ -122,7 +124,7 @@ export default function BackendCapturePage() {
       const result = await createBackendMeasurement(eventId, measurement);
       if (result.kind === "saved") {
         finishJournal();
-        setFeedback({ kind: "success", message: `Measurement tersimpan: ${result.value.measurement_id}. Event ID tidak berubah.` });
+        setFeedback({ kind: "success", message: `Pengukuran tersimpan. Lihat Riwayat sekarang memuat pengukuran ini.` });
         // On successful POST, clear the draft and read history without POST retry.
         setMeasurement({ ...initialMeasurement });
         setAttempt(n => n + 1);
@@ -139,7 +141,7 @@ export default function BackendCapturePage() {
     const wasAbsent = measurement.observation_status === "missing" || measurement.observation_status === "not_measured";
     const nowAbsent = value === "missing" || value === "not_measured";
     if (nowAbsent && !wasAbsent && [measurement.gross, measurement.tare, measurement.net].some(v => v !== null && v.trim())) {
-      if (!window.confirm("Angka massa yang telah diisi akan dikosongkan menjadi null, bukan diubah menjadi nol. Lanjutkan?")) return;
+      if (!window.confirm("Angka berat yang sudah diisi akan dikosongkan, bukan diubah menjadi nol. Lanjutkan?")) return;
     }
     setMeasurement(m => ({ ...m, observation_status: value,
       gross: nowAbsent ? null : m.gross === null ? "" : m.gross,
@@ -156,95 +158,85 @@ export default function BackendCapturePage() {
     navigate(`/backend-demo/capture?event=${encodeURIComponent(knownInput.toLowerCase())}`, { replace: true });
   }
 
-  return <div className="space-y-6">
-    <header className="space-y-2">
-      <h1 className="text-2xl font-bold">Capture backend persisten — sintetis</h1>
-      <p>FastAPI/PostgreSQL lokal, kontrak Demo v0.1 provisional. Terpisah sepenuhnya dari QuickCapture dan DemoStore in-memory.</p>
-      <p className="text-sm text-amber-800">Bukan sistem resmi BGN. Belum ada autentikasi produksi, idempotency atau penyimpanan input verbatim. Dua POST adalah dua transaksi terpisah.</p>
-      <p className="text-sm">Alur demo: 1. Buat event → 2. Tambah pengukuran → 3. Buka detail dan muat ulang. Simpan URL detail untuk membaca UUID yang sama.</p>
-      <Link className="text-sky-700 underline" to={eventId ? `/backend-demo/events/${eventId}` : "/backend-demo"}>Buka detail backend (read-only)</Link>
-    </header>
+  return <div className="ux-page space-y-6">
+    <PageHeading title={routeId ? 'Catat Pengukuran Sisa Pangan' : 'Catat Kejadian Sisa Pangan'}>{routeId ? 'Pengukuran ini ditambahkan pada kejadian yang sama, bukan membuat kejadian baru.' : 'Catat kejadian terlebih dahulu. Beratnya boleh ditambahkan setelah pengukuran.'} Data latihan tersimpan terpisah dari contoh sementara.</PageHeading>
+    <div className="ux-steps"><strong>1 · Kejadian</strong><span>→</span><strong>2 · Pengukuran</strong><span>→</span><Link to={eventId ? `/backend-demo/events/${eventId}` : '/backend-demo/ledger'}>3 · Riwayat &amp; pemeriksaan</Link></div>
 
     {locked && !busy && <section className="rounded border-2 border-amber-600 bg-amber-50 p-4 space-y-3">
       <h2 className="font-semibold">Hasil penyimpanan belum dapat dipastikan (UNKNOWN)</h2>
-      <UncertainResultState detail={`POST ${journal?.operation ?? 'privat'} mungkin telah commit. Tidak ada retry otomatis atau tombol kirim ulang. Jangan membuat record baru sebelum investigasi.`} />
+      <UncertainResultState detail={`Belum bisa dipastikan apakah catatan berhasil tersimpan. Jangan kirim ulang agar tidak tercatat dua kali. Minta bantuan petugas yang berwenang.`} />
       {journal?.eventId && <Link className="text-sky-700 underline" to={`/backend-demo/events/${journal.eventId}`}>Periksa riwayat event {journal.eventId} (GET)</Link>}
-      <p>Gunakan pemulihan intent privat di atas. Intent registered tanpa hasil tetap UNCONFIRMED; tidak ada tombol replay atau buka kunci tanpa bukti server.</p>
+      <p>Hasil tetap terkunci sampai ada konfirmasi penyimpanan yang sah. Melihat riwayat saja tidak membuktikan bahwa pengiriman gagal.</p>
     </section>}
     {feedback && <p role={feedback.kind === "success" ? "status" : "alert"} className="rounded border bg-white p-3">{feedback.message}</p>}
-    {busy && <p role="status">Sedang menyimpan ke backend… Tunggu hasilnya; jangan kirim ulang atau tutup halaman.</p>}
+    {busy && <p role="status">Sedang menyimpan catatan… Tunggu hasilnya; jangan kirim ulang atau tutup halaman.</p>}
     {readFeedback && <p role="alert" className="rounded border p-3">{readFeedback}</p>}
 
-    <form onSubmit={attachKnownEvent} className="rounded border bg-white p-4 space-y-2">
+    <details className="ux-technical"><summary>Pemulihan lanjutan: ID kejadian yang sudah diketahui</summary><form onSubmit={attachKnownEvent} className="rounded border bg-white p-4 space-y-2">
       <label className="block">Pulihkan event dari UUID yang sudah diketahui<input className={field} value={knownInput} onChange={e => setKnownInput(e.target.value)} placeholder="UUID event backend" /></label>
       <button type="submit" disabled={busy} className="rounded border px-4 py-2">Baca event dari backend (GET saja)</button>
-    </form>
+    </form></details>
 
     {!eventId && !routeId && permits('event.create') && <form onSubmit={e => { void submitEvent(e); }} className="rounded border bg-white p-4 space-y-4" noValidate>
-      <h2 className="text-lg font-semibold">1. Buat event sintetis</h2>
-      <p className="text-sm">Fixture backend hanya tersedia bila sudah disiapkan pada database uji yang diotorisasi. Pilihan ini bukan identitas site DemoStore.</p>
-      <label className="block">Organisasi/site fixture sintetis
-        <select className={field} value={eventInput.site_id} disabled><option value={eventInput.site_id}>{SYNTHETIC_ORG_ID} / {eventInput.site_id}</option></select>
+      <h2 className="text-lg font-semibold">Informasi kejadian</h2>
+      <p className="text-sm">Lokasi mengikuti sesi yang berizin. Pengukuran ditambahkan setelah kejadian dikonfirmasi server. Tidak ada data contoh yang otomatis disimpan.</p>
+      <label className="block">Lokasi dapur
+        <select className={field} value={eventInput.site_id} disabled><option value={eventInput.site_id}>Lokasi dapur aktif</option></select>
       </label>
-      <label className="block">Jenis event backend provisional
-        <select className={field} value={eventInput.event_type} onChange={e => setEventInput(v => ({ ...v, event_type: e.target.value as EventInput["event_type"] }))}>
-          <option value="">— Pilih jenis event —</option><option value="at_risk_surplus">at_risk_surplus — surplus berisiko</option><option value="actual_loss_discard">actual_loss_discard — kehilangan/discard</option>
+      <label className="block">Jenis kejadian
+        <select aria-describedby={fieldErrors.event_type ? "capture-event-type-error" : undefined} aria-invalid={!!fieldErrors.event_type} className={field} value={eventInput.event_type} onChange={e => setEventInput(v => ({ ...v, event_type: e.target.value as EventInput["event_type"] }))}>
+          <option value="">— Pilih jenis kejadian —</option><option value="at_risk_surplus">Surplus pangan berisiko</option><option value="actual_loss_discard">Pangan hilang atau dibuang</option>
         </select>
       </label>
-      <label className="block">Waktu kejadian ISO-8601 dengan offset
-        <input className={field} value={eventInput.occurred_at} onChange={e => setEventInput(v => ({ ...v, occurred_at: e.target.value }))} placeholder="2026-11-06T12:00:00+08:00" aria-invalid={!!fieldErrors.occurred_at} />
-        {fieldErrors.event_type && <span className="text-red-700">{fieldErrors.event_type}</span>}{fieldErrors.occurred_at && <span className="text-red-700">{fieldErrors.occurred_at}</span>}
-      </label>
+      <TimestampInput label="Tanggal dan waktu kejadian" value={eventInput.occurred_at} onChange={occurred_at => setEventInput(v => ({ ...v, occurred_at }))} error={fieldErrors.occurred_at} />
+      {fieldErrors.event_type && <p id="capture-event-type-error" role="alert" className="text-red-700">{fieldErrors.event_type}</p>}
       <div className="grid gap-3 sm:grid-cols-3">
-        <label className="block">Stage code (opsional)<input className={field} value={eventInput.stage_code ?? ""} onChange={e => setEventInput(v => ({ ...v, stage_code: e.target.value }))} placeholder="mis. preparation" aria-invalid={!!fieldErrors.stage_code} />{fieldErrors.stage_code && <span className="text-red-700">{fieldErrors.stage_code}</span>}</label>
-        <label className="block">Process step (opsional)<input className={field} value={eventInput.process_step ?? ""} onChange={e => setEventInput(v => ({ ...v, process_step: e.target.value }))} placeholder="mis. batch_completion" /></label>
-        <label className="block">Tanggal operasi (opsional; tidak dihitung otomatis)
-          <input className={field} value={eventInput.operation_date ?? ""} onChange={e => setEventInput(v => ({ ...v, operation_date: e.target.value }))} placeholder="YYYY-MM-DD" aria-invalid={!!fieldErrors.operation_date} />
-          {fieldErrors.operation_date && <span className="text-red-700">{fieldErrors.operation_date}</span>}
+        <label className="block">Tahap kegiatan (opsional)<input className={field} value={eventInput.stage_code ?? ""} onChange={e => setEventInput(v => ({ ...v, stage_code: e.target.value }))} placeholder="mis. preparation" aria-describedby={fieldErrors.stage_code ? "capture-stage_code-error" : undefined} aria-invalid={!!fieldErrors.stage_code} />{fieldErrors.stage_code && <span id="capture-stage_code-error" role="alert" className="text-red-700">{fieldErrors.stage_code}</span>}</label>
+        <label className="block">Aktivitas saat kejadian (opsional)<input className={field} value={eventInput.process_step ?? ""} onChange={e => setEventInput(v => ({ ...v, process_step: e.target.value }))} placeholder="mis. batch_completion" /></label>
+        <label className="block">Tanggal kegiatan dapur (opsional; isi sesuai catatan)
+          <input className={field} value={eventInput.operation_date ?? ""} onChange={e => setEventInput(v => ({ ...v, operation_date: e.target.value }))} type="date" aria-describedby={fieldErrors.operation_date ? "capture-operation_date-error" : undefined} aria-invalid={!!fieldErrors.operation_date} />
+          {fieldErrors.operation_date && <span id="capture-operation_date-error" role="alert" className="text-red-700">{fieldErrors.operation_date}</span>}
         </label>
       </div>
-      <button type="submit" className="rounded bg-sky-700 px-4 py-2 text-white disabled:opacity-50" disabled={busy || locked}>Simpan event backend</button>
+      <button type="submit" className="rounded bg-sky-700 px-4 py-2 text-white disabled:opacity-50" disabled={busy || locked}>Simpan kejadian</button>
     </form>}
 
     {routeId && !eventId && !readFeedback && <p role="status">Memeriksa UUID event yang diketahui dari PostgreSQL…</p>}
     {routeId && readFeedback && <button type="button" className="rounded border px-4 py-2" disabled={busy} onClick={() => setAttempt(n => n + 1)}>Coba baca ulang (GET saja)</button>}
-    {eventId && <section className="rounded border bg-white p-4 space-y-2">
-      <h2 className="text-lg font-semibold">Event backend saat ini</h2>
-      <p className="break-all font-mono">{eventId}</p>
-      <Link className="text-sky-700 underline" to={`/backend-demo/events/${eventId}`}>Detail dan riwayat read-only</Link>
-      {confirmedEvent && <p>Event dikonfirmasi: {confirmedEvent.event_type} · {confirmedEvent.occurred_at}</p>}
-      {history && <p role="status">Riwayat backend berhasil dibaca: {history.length} measurement (tanpa agregasi atau pilihan kanonik).</p>}
-    </section>}
+    {confirmedEvent && <EventContext event={confirmedEvent} count={history?.length} />}
+    {history && <p role="status">Riwayat telah dimuat: {history.length} pengukuran. Setiap hasil tetap terpisah.</p>}
 
     {eventId && permits('measurement.create') && <form onSubmit={e => { void submitMeasurement(e); }} noValidate className="rounded border bg-white p-4 space-y-4">
-      <h2 className="text-lg font-semibold">2. Tambah measurement pada event yang sama</h2>
-      <p className="text-sm">Status: observed = teramati, estimated = estimasi, measured_zero = nol terukur, missing = nilai tidak tersedia, not_measured = tidak diukur. Missing/tidak diukur menyimpan null, bukan 0 kg.</p>
-      <label className="block">Observation status
-        <select className={field} value={measurement.observation_status} onChange={e => changeStatus(e.target.value as MeasurementInput["observation_status"])}>
-          <option value="">— Pilih status —</option>{BACKEND_STATUSES.map(v => <option value={v} key={v}>{v}</option>)}
+      <h2 className="text-lg font-semibold">Pengukuran pada kejadian yang sama</h2>
+      <p className="text-sm">Pilih kondisi hasil pengukuran. Perkiraan berbeda dari hasil ukur; data belum tersedia dan belum diukur bukan hasil 0 kg.</p>
+      <label className="block">Kondisi hasil pengukuran
+        <select className={field} aria-describedby={fieldErrors.observation_status ? "capture-observation_status-error" : undefined} aria-invalid={!!fieldErrors.observation_status} value={measurement.observation_status} onChange={e => changeStatus(e.target.value as MeasurementInput["observation_status"])}>
+          <option value="">— Pilih status —</option>{BACKEND_STATUSES.map(v => <option value={v} key={v}>{observationLabels[v]}</option>)}
         </select>
       </label>
-      <label className="block">Mass basis provisional
-        <select className={field} value={measurement.mass_basis} onChange={e => setMeasurement(m => ({ ...m, mass_basis: e.target.value as MeasurementInput["mass_basis"] }))}>
-          <option value="">— Pilih basis —</option>{BACKEND_MASS_BASES.map(v => <option value={v} key={v}>{v}</option>)}
+      <label className="block">Kondisi pangan saat diukur
+        <select className={field} aria-describedby={fieldErrors.mass_basis ? "capture-mass_basis-error" : undefined} aria-invalid={!!fieldErrors.mass_basis} value={measurement.mass_basis} onChange={e => setMeasurement(m => ({ ...m, mass_basis: e.target.value as MeasurementInput["mass_basis"] }))}>
+          <option value="">— Pilih kondisi pangan —</option>{BACKEND_MASS_BASES.map(v => <option value={v} key={v}>{basisLabels[v]}</option>)}
         </select>
       </label>
-      <div className="grid gap-3 sm:grid-cols-3">{(["gross", "tare", "net"] as const).map(name => <label className="block" key={name}>{name} (kg)
-        <input className={field} inputMode="decimal" value={measurement[name] ?? ""} disabled={measurement.observation_status === "missing" || measurement.observation_status === "not_measured"} onChange={e => setMeasurement(m => ({ ...m, [name]: e.target.value }))} aria-invalid={!!fieldErrors[name]} />
-        {fieldErrors[name] && <span className="text-red-700">{fieldErrors[name]}</span>}
+      <div className="grid gap-3 sm:grid-cols-3">{(["gross", "tare", "net"] as const).map(name => <label className="block" key={name}>{{gross: "Berat total termasuk wadah", tare: "Berat wadah", net: "Berat pangan tanpa wadah"}[name]} (kg)
+        <input className={field} inputMode="decimal" value={measurement[name] ?? ""} disabled={measurement.observation_status === "missing" || measurement.observation_status === "not_measured"} onChange={e => setMeasurement(m => ({ ...m, [name]: e.target.value }))} aria-describedby={`capture-mass-help${fieldErrors[name] ? ` capture-${name}-error` : ""}`} aria-invalid={!!fieldErrors[name]} />
+        {fieldErrors[name] && <span id={`capture-${name}-error`} role="alert" className="text-red-700">{fieldErrors[name]}</span>}
       </label>)}</div>
-      <p className="text-sm">Gross, tare, net diisi manual; backend memvalidasi pengurangan dengan Decimal. Tidak ada default tare atau pembulatan.</p>
-      <label className="block">Measurement method<input className={field} value={measurement.measurement_method} onChange={e => setMeasurement(m => ({ ...m, measurement_method: e.target.value }))} />{fieldErrors.measurement_method && <span className="text-red-700">{fieldErrors.measurement_method}</span>}</label>
-      <label className="block">Provenance sintetis<input className={field} value={measurement.provenance} onChange={e => setMeasurement(m => ({ ...m, provenance: e.target.value }))} />{fieldErrors.provenance && <span className="text-red-700">{fieldErrors.provenance}</span>}</label>
-      <label className="block">Waktu pengukuran ISO-8601 dengan offset<input className={field} value={measurement.measured_at} placeholder="2026-11-06T12:02:00+08:00" onChange={e => setMeasurement(m => ({ ...m, measured_at: e.target.value }))} />{fieldErrors.measured_at && <span className="text-red-700">{fieldErrors.measured_at}</span>}</label>
+      <p id="capture-mass-help" className="text-sm">Isi ketiga berat sesuai catatan. Berat total harus sama dengan berat wadah ditambah berat pangan. Berat wadah tidak otomatis nol.</p>
+      <label className="block">Bagaimana berat diperoleh?<input className={field} aria-describedby={fieldErrors.measurement_method ? "capture-measurement_method-error" : undefined} aria-invalid={!!fieldErrors.measurement_method} value={measurement.measurement_method} onChange={e => setMeasurement(m => ({ ...m, measurement_method: e.target.value }))} />{fieldErrors.measurement_method && <span id="capture-measurement_method-error" role="alert" className="text-red-700">{fieldErrors.measurement_method}</span>}</label>
+      <label className="block">Dari mana data ini berasal?<input className={field} aria-describedby={fieldErrors.provenance ? "capture-provenance-error" : undefined} aria-invalid={!!fieldErrors.provenance} value={measurement.provenance} onChange={e => setMeasurement(m => ({ ...m, provenance: e.target.value }))} />{fieldErrors.provenance && <span id="capture-provenance-error" role="alert" className="text-red-700">{fieldErrors.provenance}</span>}</label>
+      <TimestampInput label="Tanggal dan waktu pengukuran" value={measurement.measured_at} onChange={measured_at => setMeasurement(m => ({ ...m, measured_at }))} error={fieldErrors.measured_at} />
+      <details className="ux-technical"><summary>Instrumen, sampel &amp; nilai sumber tambahan</summary>
       <div className="grid gap-3 sm:grid-cols-3">
         <label className="block">Nilai asal diketik apa adanya (opsional)<input className={field} inputMode="decimal" value={measurement.original_value_lexeme ?? ""} onChange={e => setMeasurement(m => ({ ...m, original_value_lexeme: e.target.value }))} placeholder="mis. 2.40" /></label>
         <label className="block">Referensi alat (opsional)<input className={field} value={measurement.instrument_ref ?? ""} onChange={e => setMeasurement(m => ({ ...m, instrument_ref: e.target.value }))} placeholder="mis. SCALE-SYN-01" /></label>
         <label className="block">Konteks sampel (opsional)<input className={field} value={measurement.sample_context ?? ""} onChange={e => setMeasurement(m => ({ ...m, sample_context: e.target.value }))} placeholder="mis. full_bin" /></label>
       </div>
-      <p className="text-sm">Nilai asal yang diketik disimpan sebagai teks provenance; backend tetap memvalidasi desimal secara exact. Field kosong tidak dikirim sebagai nol.</p>
-      {fieldErrors.observation_status && <p className="text-red-700">{fieldErrors.observation_status}</p>}{fieldErrors.mass_basis && <p className="text-red-700">{fieldErrors.mass_basis}</p>}
-      <button type="submit" disabled={busy || locked} className="rounded bg-sky-700 px-4 py-2 text-white disabled:opacity-50">Simpan measurement ke event ini</button>
+      </details><p className="text-sm">Angka sumber tetap disimpan seperti yang dicatat. Bagian kosong tidak diubah menjadi nol.</p>
+      {fieldErrors.observation_status && <p id="capture-observation_status-error" role="alert" className="text-red-700">{fieldErrors.observation_status}</p>}{fieldErrors.mass_basis && <p id="capture-mass_basis-error" role="alert" className="text-red-700">{fieldErrors.mass_basis}</p>}
+      <button type="submit" disabled={busy || locked} className="rounded bg-sky-700 px-4 py-2 text-white disabled:opacity-50">Simpan pengukuran</button>
     </form>}
+    <PolicyNotice />
   </div>;
 }

@@ -1,3 +1,4 @@
+import { fillTimestamp, openSourceDetails } from './ux-helpers.mjs';
 import { test as base, expect } from '@playwright/test';
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
@@ -96,14 +97,19 @@ async function login(page, backend, name='site_a_writer') {
   // Wait for initial Vite optimization/navigation and the first session check;
   // never refill/replay a submitted credential or domain POST.
   await page.waitForLoadState('networkidle');
+  await expect(page.getByRole('alert')).toContainText('Silakan masuk dengan akun sintetis.');
   await page.getByLabel('Akun sintetis').fill(name);
+  await expect(page.getByLabel('Akun sintetis')).toHaveValue(name);
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(resolve)));
   // Do not put the credential in a locator.fill call log on failure.
   await page.getByLabel('Password', { exact: true }).evaluate((input, secret) => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, secret);
     input.dispatchEvent(new Event('input', { bubbles: true }));
   }, backend.passwords[name]);
+  // Check only length; never put a password in assertion output. No submit/retry has occurred.
+  await expect.poll(() => page.getByLabel('Password', { exact: true }).evaluate(input => input.value.length)).toBe(backend.passwords[name].length);
   await page.getByRole('button', { name: 'Masuk', exact: true }).click();
-  try { await expect(page.getByLabel('Site berizin')).toBeVisible(); }
+  try { await expect(page.getByLabel('Lokasi dapur yang dapat diakses')).toBeVisible(); }
   catch (error) { throw new Error(`Login failed; sanitized HTTP evidence: ${JSON.stringify(network)}; backend: ${JSON.stringify((await backend.snapshot()).auth_http)}`, { cause: error }); }
   finally { page.off('response', inspect); }
 }
@@ -111,38 +117,40 @@ test.beforeEach(async ({ page, backend }) => { await login(page, backend); backe
 
 async function createEvent(page) {
   await page.goto('/backend-demo/capture');
-  await page.getByLabel('Jenis event backend provisional').selectOption('at_risk_surplus');
-  await page.getByLabel('Waktu kejadian ISO-8601 dengan offset').fill('2026-11-06T12:00:00.123456+08:00');
+  await page.getByLabel('Jenis kejadian').selectOption('at_risk_surplus');
+  await fillTimestamp(page, 'Tanggal dan waktu kejadian', '2026-11-06T12:00:00.123456+08:00');
   const response = page.waitForResponse(r => new URL(r.url()).pathname === EVENT_PATH && r.request().method() === 'POST');
-  await page.getByRole('button', { name: 'Simpan event backend', exact: true }).click();
+  await page.getByRole('button', { name: 'Simpan kejadian', exact: true }).click();
   expect((await response).status()).toBe(201);
-  await expect(page.getByText(/Event disimpan:/)).toBeVisible();
+  await expect(page.getByText(/Kejadian berhasil dicatat./)).toBeVisible();
   const eventId = new URL(page.url()).searchParams.get('event');
   expect(eventId).toMatch(/^[0-9a-f-]{36}$/);
-  await expect(page.getByText(/Event dikonfirmasi:/)).toBeVisible();
+  await expect(page.getByText(/Kejadian telah dibaca/)).toBeVisible();
   return eventId;
 }
 
 async function fillMeasurement(page, { status = 'observed', gross = LONG, tare = '0', net = LONG } = {}) {
   // These wrapping labels include the select's option text in the browser DOM.
   // Match the stable label prefix rather than requiring an exact textContent.
-  await page.getByLabel(/^Observation status/).selectOption(status);
-  await page.getByLabel(/^Mass basis provisional/).selectOption('as_served');
+  await page.getByLabel(/^Kondisi hasil pengukuran/).selectOption(status);
+  await page.getByLabel(/^Kondisi pangan saat diukur/).selectOption('as_served');
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(resolve)));
   if (!['missing', 'not_measured'].includes(status)) {
-    await page.getByLabel('gross (kg)', { exact: true }).fill(gross);
-    await page.getByLabel('tare (kg)', { exact: true }).fill(tare);
-    await page.getByLabel('net (kg)', { exact: true }).fill(net);
+    await page.getByLabel('Berat total termasuk wadah (kg)', { exact: true }).fill(gross);
+    await expect(page.getByLabel('Berat total termasuk wadah (kg)', { exact: true })).toHaveValue(gross);
+    await page.getByLabel('Berat wadah (kg)', { exact: true }).fill(tare);
+    await page.getByLabel('Berat pangan tanpa wadah (kg)', { exact: true }).fill(net);
   }
-  await page.getByLabel('Measurement method', { exact: true }).fill('synthetic_ci_scale');
-  await page.getByLabel('Provenance sintetis', { exact: true }).fill('FWI-INT-005 Linux Chromium synthetic fixture');
-  await page.getByLabel('Waktu pengukuran ISO-8601 dengan offset').fill('2026-11-06T12:02:00.654321+08:00');
+  await page.getByLabel('Bagaimana berat diperoleh?', { exact: true }).fill('synthetic_ci_scale');
+  await page.getByLabel('Dari mana data ini berasal?', { exact: true }).fill('FWI-INT-005 Linux Chromium synthetic fixture');
+  await fillTimestamp(page, 'Tanggal dan waktu pengukuran', '2026-11-06T12:02:00.654321+08:00');
 }
 
 async function submitMeasurement(page, eventId, status = 201) {
   const response = page.waitForResponse(r => new URL(r.url()).pathname === `${EVENT_PATH}/${eventId}/measurements` && r.request().method() === 'POST');
-  await page.getByRole('button', { name: 'Simpan measurement ke event ini', exact: true }).click();
+  await page.getByRole('button', { name: 'Simpan pengukuran', exact: true }).click();
   expect((await response).status()).toBe(status);
-  if (status === 201) await expect(page.getByText(/Measurement tersimpan:/)).toBeVisible();
+  if (status === 201) await expect(page.getByText(/Pengukuran tersimpan./)).toBeVisible();
 }
 
 // Fetch exactly once through the real proxy/backend; prove commit/audit BEFORE
@@ -185,11 +193,11 @@ async function loseAcknowledgement(page, backend, operation) {
 test('W-20: committed event, lost acknowledgement, UNKNOWN and refresh never replay POST', async ({ page, backend }, testInfo) => {
   const loss = await loseAcknowledgement(page, backend, 'event');
   await page.goto('/backend-demo/capture');
-  await page.getByLabel('Jenis event backend provisional').selectOption('at_risk_surplus');
-  await page.getByLabel('Waktu kejadian ISO-8601 dengan offset').fill('2026-11-06T12:00:00+08:00');
-  const [, proof] = await Promise.all([page.getByRole('button', { name: 'Simpan event backend', exact: true }).click(), loss.proof]);
+  await page.getByLabel('Jenis kejadian').selectOption('at_risk_surplus');
+  await fillTimestamp(page, 'Tanggal dan waktu kejadian', '2026-11-06T12:00:00+08:00');
+  const [, proof] = await Promise.all([page.getByRole('button', { name: 'Simpan kejadian', exact: true }).click(), loss.proof]);
   await expect(page.getByRole('heading', { name: /UNKNOWN/ })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Simpan event backend', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Simpan kejadian', exact: true })).toBeDisabled();
   await page.reload();
   await expect(page.getByRole('link', { name: 'Buka hasil terkonfirmasi (GET)' })).toBeVisible();
   await expect(page.getByText(/Hasil commit terkonfirmasi oleh server/)).toBeVisible();
@@ -206,7 +214,7 @@ test('W-21: committed measurement, lost acknowledgement, same-event UNKNOWN surv
   const eventId = await createEvent(page);
   const loss = await loseAcknowledgement(page, backend, 'measurement');
   await fillMeasurement(page);
-  const [, proof] = await Promise.all([page.getByRole('button', { name: 'Simpan measurement ke event ini', exact: true }).click(), loss.proof]);
+  const [, proof] = await Promise.all([page.getByRole('button', { name: 'Simpan pengukuran', exact: true }).click(), loss.proof]);
   await expect(page.getByRole('heading', { name: /UNKNOWN/ })).toBeVisible();
   await page.reload();
   await expect(page.getByRole('link', { name: 'Buka hasil terkonfirmasi (GET)' })).toHaveCount(2);
@@ -226,7 +234,7 @@ test('W-22: reject inconsistent mass, correct it on the same event without dupli
   await submitMeasurement(page, eventId, 422);
   await expect(page.getByText(/Server menolak operasi \(HTTP 422\)/)).toBeVisible();
   expect((await backend.snapshot()).counts).toMatchObject({ waste_events: 1, measurements: 0, audit_events: backend.baseline.counts.audit_events + 1 });
-  await page.getByLabel('net (kg)', { exact: true }).fill('0.3');
+  await page.getByLabel('Berat pangan tanpa wadah (kg)', { exact: true }).fill('0.3');
   await submitMeasurement(page, eventId);
   const after = await backend.snapshot();
   expect(after.counts).toMatchObject({ waste_events: 1, measurements: 1, audit_events: backend.baseline.counts.audit_events + 2 });
@@ -241,17 +249,17 @@ test('W-23: read-after-write and direct refresh preserve UUID and never submit a
   await submitMeasurement(page, eventId);
   const before = await backend.snapshot();
   await page.reload();
-  await expect(page.getByText(/Event dikonfirmasi:/)).toBeVisible();
-  await expect(page.getByText(/Riwayat backend berhasil dibaca: 1 measurement/)).toBeVisible();
+  await expect(page.getByText(/Kejadian telah dibaca/)).toBeVisible();
+  await expect(page.getByText(/Riwayat telah dimuat: 1 pengukuran/)).toBeVisible();
   expect(new URL(page.url()).searchParams.get('event')).toBe(eventId);
-  await page.getByRole('link', { name: 'Detail dan riwayat read-only', exact: true }).click();
+  await page.getByRole('link', { name: 'Lihat rincian kejadian →', exact: true }).click();
   await expect(page.getByRole('article')).toHaveCount(1);
   await expect(page.getByLabel(`Net: ${LONG} kg`, { exact: true })).toHaveCount(1);
   await expect(page.getByLabel(`Gross: ${LONG} kg`, { exact: true })).toHaveCount(1);
   await page.reload();
   await expect(page.getByRole('article')).toHaveCount(1);
-  await page.getByRole('link', { name: 'Kembali: tambah pengukuran pada event ini' }).click();
-  await expect(page.getByText(/Event dikonfirmasi:/)).toBeVisible();
+  await page.getByRole('link', { name: 'Tambah Pengukuran pada Kejadian Ini' }).click();
+  await expect(page.getByText(/Kejadian telah dibaca/)).toBeVisible();
   expect(new URL(page.url()).searchParams.get('event')).toBe(eventId);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   const after = await backend.snapshot();
@@ -265,7 +273,7 @@ test('W-24: Decimal, null/zero and all five statuses remain traceable on one eve
     await fillMeasurement(page, { status, ...(status === 'measured_zero' ? { gross: '0.4', tare: '0.4', net: '0' } : {}) });
     await submitMeasurement(page, eventId);
     // Server-confirmed history ensures the last draft reset before entering the next observation.
-    await expect(page.getByRole('button', { name: 'Simpan measurement ke event ini', exact: true })).toBeEnabled();
+    await expect(page.getByRole('button', { name: 'Simpan pengukuran', exact: true })).toBeEnabled();
   }
   const before = await backend.snapshot();
   expect(before.counts).toMatchObject({ waste_events: 1, measurements: 5, audit_events: backend.baseline.counts.audit_events + 6 });
@@ -277,12 +285,12 @@ test('W-24: Decimal, null/zero and all five statuses remain traceable on one eve
   expect(byStatus.measured_zero.net).toBe('0');
   expect(new Set(before.data.measurements.map(m => m.measurement_id)).size).toBe(5);
   expect(before.data.measurements.every(m => m.event_id === eventId && m.mass_basis === 'as_served' && m.measurement_method === 'synthetic_ci_scale')).toBe(true);
-  await page.getByRole('link', { name: 'Detail dan riwayat read-only', exact: true }).click();
+  await page.getByRole('link', { name: 'Lihat rincian kejadian →', exact: true }).click();
   await expect(page.getByRole('article')).toHaveCount(5);
-  await expect(page.getByLabel(/: Tidak tersedia \(null\)/)).toHaveCount(6);
-  await expect(page.getByText('Estimasi (estimated)', { exact: true })).toBeVisible();
-  await expect(page.getByText('Nol terukur (measured_zero)', { exact: true })).toBeVisible();
-  await expect(page.getByText(/Dua GET dibaca terpisah, bukan snapshot atomik/)).toBeVisible();
+  await expect(page.getByLabel(/: Berat belum tersedia/)).toHaveCount(6);
+  await expect(page.getByText('Perkiraan berat', { exact: true })).toBeVisible();
+  await expect(page.getByText('Diukur, hasil 0 kg', { exact: true })).toBeVisible();
+  await expect(page.getByText(/keduanya mungkin tidak menunjukkan keadaan pada saat yang persis sama/)).toBeVisible();
   await page.getByRole('link', { name: 'Buka ledger in-memory (sumber berbeda)' }).click();
   await expect(page.getByRole('heading', { name: '3 event (data fiktif)' })).toBeVisible();
   await expect(page.getByRole('main')).not.toContainText(eventId);
@@ -310,8 +318,8 @@ test('SEC-C: CSRF denial, cross-actor privacy, IDOR and expired session fail clo
   expect((await page.request.post('/auth/intents', { headers: { origin: 'https://127.0.0.1:5173',
     'x-csrf-token': 'incorrect' }, data: { site_id: '22222222-2222-4222-8222-222222222222', kind: 'event' }, maxRetries: 0 })).status()).toBe(403);
   expect((await backend.snapshot()).sha256).toBe(before.sha256);
-  await page.getByRole('button', { name: 'Keluar', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Masuk backend sintetis' })).toBeVisible();
+  await Promise.all([page.waitForResponse(r => new URL(r.url()).pathname === '/auth/logout' && r.request().method() === 'POST' && r.status() === 200), page.getByRole('button', { name: 'Keluar', exact: true }).click()]);
+  await expect(page.getByRole('heading', { name: 'Masuk ke FWI' })).toBeVisible();
   await login(page, backend, 'site_b_writer');
   await expect(page.getByRole('main')).not.toContainText(eventId);
   await page.goto(`/backend-demo/events/${eventId}`);
@@ -319,7 +327,7 @@ test('SEC-C: CSRF denial, cross-actor privacy, IDOR and expired session fail clo
   await expect(page.getByRole('article')).toHaveCount(0);
   await backend.expireSessions();
   await page.reload();
-  await expect(page.getByRole('heading', { name: 'Masuk backend sintetis' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Masuk ke FWI' })).toBeVisible();
   expect((await backend.snapshot()).counts.waste_events).toBe(1);
 });
 
@@ -333,7 +341,7 @@ test('SEC-D1: Secure cookies, revoked session and unavailable CSRF never authori
     data: { site_id: '22222222-2222-4222-8222-222222222222', kind: 'event' }, maxRetries: 0 })).status()).toBe(403);
   await backend.revokeSessions();
   await page.reload();
-  await expect(page.getByRole('heading', { name: 'Masuk backend sintetis' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Masuk ke FWI' })).toBeVisible();
   expect((await page.request.get('/auth/intents', { headers: { origin: 'https://127.0.0.1:5173' } })).status()).toBe(401);
   const after = await backend.snapshot();
   expect(after.posts).toHaveLength(0);
@@ -352,11 +360,11 @@ test('SEC-D2: registered but undispatched intent remains private UNCONFIRMED acr
   expect(registration.status).toBe(201);
   await page.goto('/backend-demo/capture');
   await expect(page.getByText(/UNCONFIRMED:/)).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Simpan event backend', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Simpan kejadian', exact: true })).toBeDisabled();
   await page.reload();
   await expect(page.getByText(/UNCONFIRMED:/)).toBeVisible();
   expect((await backend.snapshot()).intents).toEqual([expect.objectContaining({ intent_id: registration.id, state: 'registered', result_id: null })]);
-  await page.getByRole('button', { name: 'Keluar', exact: true }).click();
+  await Promise.all([page.waitForResponse(r => new URL(r.url()).pathname === '/auth/logout' && r.request().method() === 'POST' && r.status() === 200), page.getByRole('button', { name: 'Keluar', exact: true }).click()]);
   await login(page, backend, 'site_b_writer');
   await expect(page.getByText(/UNCONFIRMED:/)).toHaveCount(0);
   expect(await (await page.request.get('/auth/intents', { headers: { origin: 'https://127.0.0.1:5173' } })).json()).toEqual([]);
@@ -388,7 +396,7 @@ test('SEC-D3: same-principal new session, cross-tab actor switch and delayed pri
   const other = await context.newPage();
   try {
     await other.goto('/backend-demo');
-    await expect(other.getByLabel('Site berizin')).toBeVisible();
+    await expect(other.getByLabel('Lokasi dapur yang dapat diakses')).toBeVisible();
     await other.getByRole('button', { name: 'Keluar', exact: true }).click();
     await login(other, backend); // same principal, a distinct backend login session
     const second = await other.evaluate(async () => {

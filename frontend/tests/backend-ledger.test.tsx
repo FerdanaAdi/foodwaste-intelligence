@@ -19,9 +19,9 @@ describe("FR-003 backend ledger page", () => {
     const fetchMock = vi.fn(async () => response({ events: [event], total: 1, page: 1, page_size: 20 }));
     vi.stubGlobal("fetch", fetchMock);
     mount();
-    expect(await screen.findByText(/Ledger Event — LIVE BACKEND/)).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(/1 dari 1 event/));
-    expect(screen.getByRole("link", { name: event.event_id })).toBeInTheDocument();
+    expect(await screen.findByText(/Riwayat Kejadian Sisa Pangan/)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(/1 dari 1 kejadian/));
+    expect(screen.getByRole("link", { name: "Lihat rincian" })).toHaveAttribute("href", `/backend-demo/events/${event.event_id}`);
     expect(screen.getByText("preparation")).toBeInTheDocument();
     expect(screen.getByText("2026-11-04")).toBeInTheDocument();
   });
@@ -33,7 +33,7 @@ describe("FR-003 backend ledger page", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     const url = String(fetchMock.mock.calls[0]![0]);
     expect(url).toContain("site_id=22222222-2222-4222-8222-222222222222");
-    expect(await screen.findByText(/Tidak ada event pada scope\/filter ini/)).toBeInTheDocument();
+    expect(await screen.findByText(/Belum ada kejadian yang cocok dengan pilihan ini/)).toBeInTheDocument();
   });
 
   it("applies supported filters and rejects malformed dates before request", async () => {
@@ -42,12 +42,12 @@ describe("FR-003 backend ledger page", () => {
     vi.stubGlobal("fetch", fetchMock);
     mount();
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    await user.type(screen.getByLabelText(/Tanggal operasi dari/), "04-11-2026");
+    await user.type(screen.getByLabelText(/Tanggal kegiatan dapur dari/), "04-11-2026");
     await user.click(screen.getByRole("button", { name: "Terapkan filter" }));
     expect(screen.getByRole("alert")).toHaveTextContent(/YYYY-MM-DD/);
-    await user.clear(screen.getByLabelText(/Tanggal operasi dari/));
-    await user.selectOptions(screen.getByLabelText(/Jenis event/), "actual_loss_discard");
-    await user.type(screen.getByLabelText(/Tanggal operasi dari/), "2026-11-04");
+    await user.clear(screen.getByLabelText(/Tanggal kegiatan dapur dari/));
+    await user.selectOptions(screen.getByLabelText(/Jenis kejadian/), "actual_loss_discard");
+    await user.type(screen.getByLabelText(/Tanggal kegiatan dapur dari/), "2026-11-04");
     await user.click(screen.getByRole("button", { name: "Terapkan filter" }));
     await waitFor(() => {
       const url = String(fetchMock.mock.calls.at(-1)![0]);
@@ -59,7 +59,7 @@ describe("FR-003 backend ledger page", () => {
   it("backend failure shows an error state, never a fixture fallback", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => response({ detail: "x" }, 503)));
     mount();
-    expect(await screen.findByText(/503|tidak tersedia|gagal/i)).toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toHaveTextContent(/503|tidak tersedia|gagal/i);
     expect(screen.queryByText("preparation")).not.toBeInTheDocument();
   });
 });
