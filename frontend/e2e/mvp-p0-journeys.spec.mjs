@@ -6,6 +6,26 @@ import { test, login, SITE_A, SITE_B } from './backend-fixture.mjs';
 
 const ORIGIN = 'https://127.0.0.1:5173';
 
+// Test-only instant comparison: same calendar/clock/offset and 1..6 fractional
+// digits as the API contract; a single space also supports the harness's DB
+// datetime snapshot rendering. No API input or timezone policy is changed.
+function timestampMicros(value) {
+  const match = typeof value === 'string' && /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,6}))?(Z|[+-]\d{2}:\d{2})$/.exec(value);
+  if (!match || match[0] !== value) throw new Error('Invalid aware timestamp');
+  const [, y, mo, d, h, mi, se, fraction = '', offset] = match;
+  const [year, month, day, hour, minute, second] = [y, mo, d, h, mi, se].map(Number);
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  const [offsetHour, offsetMinute] = offset === 'Z' ? [0, 0] : offset.slice(1).split(':').map(Number);
+  if (year < 1 || month < 1 || month > 12 || day < 1 || day > days[month - 1] ||
+      hour > 23 || minute > 59 || second > 59 || offsetHour > 23 || offsetMinute > 59)
+    throw new Error('Invalid aware timestamp');
+  // Date parses only already-validated whole seconds; BigInt retains microseconds.
+  const milliseconds = Date.parse(`${y}-${mo}-${d}T${h}:${mi}:${se}${offset}`);
+  if (!Number.isFinite(milliseconds)) throw new Error('Invalid aware timestamp');
+  return BigInt(milliseconds) * 1000n + BigInt(fraction.padEnd(6, '0'));
+}
+
 test.beforeEach(async ({ page, backend }) => { await login(page, backend); });
 
 async function createEvent(page, { stage = 'preparation', operationDate = '2026-11-06' } = {}) {
@@ -137,9 +157,23 @@ test('J-01..J-03: ledger, repeat measurement, DQ, master, evidence, review stay 
   const proposed = await backend.snapshot();
   expect(proposed.data.correction_proposals).toHaveLength(1);
   expect(proposed.data.correction_proposals[0].state).toBe('proposed');
-  expect(proposed.data.correction_proposals[0].original_values.occurred_at).toContain('12:00:00');
-  expect(proposed.data.correction_proposals[0].proposed_values.occurred_at).toContain('12:30:00');
-  expect(proposed.data.waste_events.find(e => e.event_id === eventId).occurred_at).toContain('12:00:00'); // NOT applied
+  // Timestamp preservation: compare instants, not a connection's display offset.
+  const beforeReviewEvent = withEvidence.data.waste_events.find(e => e.event_id === eventId);
+  expect(beforeReviewEvent).toBeDefined();
+  const originalInstant = timestampMicros(beforeReviewEvent.occurred_at);
+  expect(originalInstant).toBe(timestampMicros('2026-11-06T12:00:00+08:00'));
+  const proposal = proposed.data.correction_proposals[0];
+  expect(proposal.target_id).toBe(eventId);
+  expect(timestampMicros(proposal.original_values.occurred_at)).toBe(originalInstant);
+  const proposedInstant = timestampMicros(proposal.proposed_values.occurred_at);
+  expect(proposedInstant).toBe(timestampMicros('2026-11-06T12:30:00+08:00'));
+  expect(proposedInstant - originalInstant).toBe(30n * 60n * 1_000_000n);
+  const persistedEvent = proposed.data.waste_events.find(e => e.event_id === eventId);
+  expect(persistedEvent).toEqual(beforeReviewEvent); // Entire original row remains unchanged.
+  expect(timestampMicros(persistedEvent.occurred_at)).toBe(originalInstant);
+  expect(proposed.counts).toMatchObject({ waste_events: withEvidence.counts.waste_events,
+    measurements: withEvidence.counts.measurements, evidence_references: withEvidence.counts.evidence_references });
+  // End timestamp preservation.
   expect(proposed.data.review_decisions).toHaveLength(1);
   expect(proposed.data.audit_events.filter(a => a.entity_type === 'review_decisions')).toHaveLength(1);
 
@@ -147,7 +181,10 @@ test('J-01..J-03: ledger, repeat measurement, DQ, master, evidence, review stay 
   await page.goto('/backend-demo/ledger');
   await page.reload();
   await expect(page.getByRole('status')).toContainText('2 dari 2 event');
-  expect((await backend.snapshot()).counts).toMatchObject({ waste_events: 2, measurements: 3, evidence_references: 1 });
+  const refreshed = await backend.snapshot();
+  expect(refreshed.counts).toMatchObject({ waste_events: 2, measurements: 3, evidence_references: 1 });
+  expect(refreshed.data.waste_events.find(e => e.event_id === eventId)).toEqual(beforeReviewEvent);
+  expect(refreshed.data.correction_proposals[0].original_values).toEqual(proposal.original_values);
   await testInfo.attach('journey-evidence', { body: JSON.stringify({ eventId, otherEvent }), contentType: 'application/json' });
 });
 
