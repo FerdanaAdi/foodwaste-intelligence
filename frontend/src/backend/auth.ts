@@ -64,7 +64,8 @@ async function wire(path: string, options: RequestInit = {}, signal?: AbortSigna
     const response = await Promise.race([fetch(path, { ...options, signal: controller.signal, credentials: 'same-origin',
       redirect: 'error', cache: 'no-store' }), timeout, aborted]);
     return { status: response.status, ok: response.ok, headers: response.headers,
-      json: () => Promise.race([response.json(), timeout, aborted]).finally(finish) } as Response;
+      json: () => Promise.race([response.json(), timeout, aborted]).finally(finish),
+      arrayBuffer: () => Promise.race([response.arrayBuffer(), timeout, aborted]).finally(finish) } as Response;
   } catch (error) { finish(); throw error; }
 }
 export async function checkSession(): Promise<void> {
@@ -108,6 +109,26 @@ export async function protectedJson(path: string, options: RequestInit = {}, sig
     assertCurrent(expected);
     if (response.status === 403) { invalidateAuth('Akses ditolak; periksa sesi dan izin site.'); throw new AuthFailure(403); }
     return { response, value, context: expected };
+  } catch (error) {
+    if (error instanceof AuthFailure && state.generation === expected.generation) invalidateAuth(error.message);
+    throw error;
+  }
+}
+/** Session-bound binary GET; response identity and lifecycle mirror protectedJson. */
+export async function protectedBinary(path: string, signal: AbortSignal) {
+  const expected = state;
+  assertCurrent(expected);
+  try {
+    const response = await wire(path, {}, signal);
+    assertCurrent(expected);
+    if (response.status === 401) { invalidateAuth('Sesi berakhir atau dicabut.'); throw new AuthFailure(401); }
+    if (!same(identity(response), expected.session!)) throw new AuthFailure(401);
+    if (response.status === 403) {
+      invalidateAuth('Akses ditolak; periksa sesi dan izin site.'); throw new AuthFailure(403);
+    }
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    assertCurrent(expected);
+    return { response, bytes, context: expected };
   } catch (error) {
     if (error instanceof AuthFailure && state.generation === expected.generation) invalidateAuth(error.message);
     throw error;

@@ -1,6 +1,6 @@
 /** Live authorized export client (FR-008). Session-bound GET, no-store; the
  *  server re-checks site scope per request, so no filter can widen it. */
-import { authSnapshot } from './auth';
+import { authSnapshot, protectedBinary, assertCurrent } from './auth';
 import { isUUID } from './contract';
 
 export const EXPORT_DATASETS = ['events', 'measurements', 'metadata'] as const;
@@ -23,14 +23,13 @@ function header(response: Response, name: string): string {
 /** Fetch the export bytes for the ACTIVE authorized site. Filters travel to
  *  the server, which re-applies scope; failures surface honestly (no fallback). */
 export async function fetchAuthorizedExport(dataset: ExportDataset, filters: ExportFilters, signal: AbortSignal): Promise<ExportDelivery> {
-  const site = authSnapshot().site;
+  const context = authSnapshot();
+  const site = context.site;
   if (!isUUID(site)) throw new Error('Site aktif tidak valid untuk ekspor.');
   const params = new URLSearchParams({ site_id: site, dataset });
   for (const [key, value] of Object.entries(filters)) if (value) params.set(key, value);
-  const context = authSnapshot();
-  const response = await fetch(`/demo/v0.1/export?${params.toString()}`, {
-    credentials: 'same-origin', redirect: 'error', cache: 'no-store', signal,
-  });
+  const { response, bytes } = await protectedBinary(`/demo/v0.1/export?${params.toString()}`, signal);
+  assertCurrent(context);
   if (!response.ok) {
     if (response.status === 404) throw new Error('404: Scope ekspor tidak ditemukan atau bukan milik site berizin.');
     if (response.status === 503) throw new Error('503: Layanan ekspor tidak tersedia.');
@@ -39,9 +38,7 @@ export async function fetchAuthorizedExport(dataset: ExportDataset, filters: Exp
   const scopeSite = header(response, 'X-FWI-Export-Scope-Site');
   if (scopeSite !== site) throw new Error('Scope ekspor tidak cocok dengan site aktif; delivery ditolak.');
   const disposition = header(response, 'Content-Disposition');
-  const filename = /filename="([^"]+)"/.exec(disposition)?.[1] ?? `fwi-${dataset}.csv`;
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  if (context !== authSnapshot()) throw new Error('Sesi berubah saat ekspor; delivery dibatalkan.');
+  const filename = /filename="([^"]+)"/.exec(disposition)?.[1] ?? `fwi-${dataset}.${dataset === 'metadata' ? 'json' : 'csv'}`;
   return { bytes, mediaType: response.headers.get('Content-Type') ?? 'application/octet-stream',
            filename, events: Number(header(response, 'X-FWI-Export-Events')),
            measurements: Number(header(response, 'X-FWI-Export-Measurements')),

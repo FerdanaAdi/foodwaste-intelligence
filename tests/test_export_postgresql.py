@@ -7,6 +7,8 @@ Server-side scope per request (ENG-AC-016), CSV hardening end-to-end
 import csv
 import io
 
+import pytest
+
 from auth_support import PASSWORDS, TestClient, login_client
 from fwi.api.app import create_app
 from fwi.infrastructure.database.demo_seed import ORGANIZATION_ID, SITE_ID
@@ -102,3 +104,27 @@ def test_csv_hardening_survives_delivery_with_dangerous_cell(database):
     assert exported[0]['event_id'] == event['event_id']
     # Serializer hardening applies: dangerous cell is neutralized, not executable.
     assert exported[0]['stage_code'].startswith("'")
+
+
+@pytest.mark.parametrize('dataset,media,extension', [
+    ('events', 'text/csv', 'csv'),
+    ('measurements', 'text/csv', 'csv'),
+    ('metadata', 'application/json', 'json'),
+])
+def test_export_content_type_filename_and_identity_agree(database, dataset, media, extension):
+    client = TestClient(create_app())
+    event = new_event(client)
+    new_measurement(client, event['event_id'])
+    response = client.get('/demo/v0.1/export', params={'site_id': str(SITE_ID), 'dataset': dataset})
+    assert response.status_code == 200
+    assert response.headers['content-type'].startswith(media)
+    assert response.headers['content-disposition'] == f'attachment; filename="fwi-{dataset}-site-{SITE_ID}.{extension}"'
+    assert response.headers['cache-control'] == 'no-store'
+    session = client.get('/auth/session').json()
+    assert response.headers['x-fwi-principal'] == session['principal_id']
+    assert response.headers['x-fwi-auth-context'] == session['auth_context_id']
+    assert response.headers['x-fwi-export-scope-site'] == str(SITE_ID)
+    if dataset == 'metadata':
+        assert isinstance(response.json(), dict)
+    else:
+        assert len(rows(response.content)) == 1

@@ -240,7 +240,7 @@ EXPORT_QUERY_KEYS = export_service.EXPORT_FILTER_KEYS | {'dataset'}
 
 @router.get('/export')
 def export_dataset(request: Request):
-    """Authorized CSV export delivery (FR-008).
+    """Authorized CSV/JSON export delivery (FR-008).
 
     Server re-checks session + site permit per request; rows are queried only
     for the permitted site, so forged cross-site filters cannot widen scope
@@ -276,7 +276,8 @@ def export_dataset(request: Request):
     except SQLAlchemyError as exc:
         raise HTTPException(503, 'demo database operation unavailable') from exc
     payloads = {'events': bundle.events_csv, 'measurements': bundle.measurements_csv}
-    filename = f'fwi-{dataset}-site-{site_id}.csv'
+    extension = 'json' if dataset == 'metadata' else 'csv'
+    filename = f'fwi-{dataset}-site-{site_id}.{extension}'
     body = payloads[dataset] if dataset in payloads else bundle.metadata_json
     media = 'application/json' if dataset == 'metadata' else 'text/csv; charset=utf-8'
     return Response(content=body, media_type=media, headers={

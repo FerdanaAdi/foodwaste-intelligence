@@ -6,7 +6,7 @@ import { AccessDeniedState, ServiceUnavailableState } from "@/components/states/
 
 const field = "w-full rounded border border-slate-300 bg-white p-2";
 
-/** Live authorized CSV export (FR-008). Server-side scope on every request;
+/** Live authorized CSV/JSON export (FR-008). Server-side scope on every request;
  *  XLSX is NOT available (OD-006 OPEN) and this page says so explicitly. */
 export default function BackendExportLivePage() {
   const [dataset, setDataset] = useState<ExportDataset>("events");
@@ -18,7 +18,7 @@ export default function BackendExportLivePage() {
   if (!permits('event.read')) return <AccessDeniedState reason="Peran pada site aktif tidak memiliki izin membaca untuk ekspor." />;
 
   async function run() {
-    setBusy(true); setError(null);
+    setBusy(true); setError(null); setDelivery(null);
     try { setDelivery(await fetchAuthorizedExport(dataset, filters, new AbortController().signal)); }
     catch (err) { setDelivery(null); setError(err instanceof Error ? err.message : "Ekspor gagal."); }
     finally { setBusy(false); }
@@ -26,7 +26,7 @@ export default function BackendExportLivePage() {
 
   return <div className="space-y-6">
     <header className="space-y-2">
-      <h1 className="text-2xl font-bold">Ekspor CSV — LIVE BACKEND (sintetis)</h1>
+      <h1 className="text-2xl font-bold">Ekspor {dataset === "metadata" ? "JSON" : "CSV"} — LIVE BACKEND (sintetis)</h1>
       <p>Server memeriksa ulang sesi dan izin site untuk setiap permintaan; filter tidak dapat memperluas scope. Delivery terikat sesi (no-store), tanpa URL presigned atau berkas cache.</p>
       <p className="text-sm text-amber-800">XLSX belum tersedia: format/kebijakan menunggu keputusan Owner (OD-006). Baris measurement tidak dijumlahkan menjadi generation.</p>
     </header>
@@ -34,8 +34,8 @@ export default function BackendExportLivePage() {
     <section className="rounded border bg-white p-4 space-y-3">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <label className="block">Dataset
-          <select className={field} value={dataset} onChange={e => setDataset(e.target.value as ExportDataset)}>
-            {EXPORT_DATASETS.map(v => <option key={v} value={v}>{v}</option>)}
+          <select className={field} disabled={busy} value={dataset} onChange={e => { setDataset(e.target.value as ExportDataset); setDelivery(null); }}>
+            {EXPORT_DATASETS.map(v => <option key={v} value={v}>{v === "metadata" ? "Metadata (JSON)" : v === "events" ? "Kejadian (CSV)" : "Pengukuran (CSV)"}</option>)}
           </select>
         </label>
         <label className="block">Jenis event
