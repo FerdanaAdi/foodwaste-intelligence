@@ -26,7 +26,7 @@ const REVIEWS = "/demo/v0.1/reviews";
 const EXPORT = "/demo/v0.1/export";
 const QUERY_KEYS: Record<string, string[]> = {
   [LEDGER_LIST]: ["site_id", "event_type", "stage_code", "operation_date_from", "operation_date_to", "page", "page_size"],
-  [DATA_QUALITY]: ["site_id"],
+  [DATA_QUALITY]: ["site_id", "stage_code", "operation_date_from", "operation_date_to"],
   [MASTER_REFERENCES]: ["namespace", "include_inactive"],
   [MASTER_HISTORY]: ["namespace", "code"],
   [EVIDENCE]: ["target_kind", "target_id"],

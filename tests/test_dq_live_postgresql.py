@@ -89,3 +89,93 @@ def test_dq_reconciles_with_ledger_records(database):
     ledger = client.get('/demo/v0.1/events', params={'site_id': str(SITE_ID)}).json()
     assert {r['event_id'] for r in body['records']} == {e['event_id'] for e in ledger['events']}
     assert {first['event_id'], second['event_id']} <= {r['event_id'] for r in body['records']}
+
+
+@pytest.fixture
+def dated_events(database):
+    client = TestClient(create_app())
+    # All occurred_at values intentionally differ from the filtered operation dates.
+    first = new_event(client, stage_code='preparation', operation_date='2026-11-04')
+    middle = new_event(client, stage_code='preparation', operation_date='2026-11-05')
+    last = new_event(client, stage_code='serving', operation_date='2026-11-06')
+    undated = new_event(client, stage_code='preparation')
+    measure(client, middle['event_id'], gross='0.40', tare='0.40', net='0', observation_status='measured_zero')
+    measure(client, middle['event_id'], gross=None, tare=None, net=None, observation_status='missing')
+    measure(client, last['event_id'], observation_status='estimated', measurement_method='synthetic_estimate')
+    measure(client, undated['event_id'])
+    return client, {name: event['event_id'] for name, event in [('first', first), ('middle', middle), ('last', last), ('undated', undated)]}
+
+
+@pytest.mark.parametrize('filters,names', [
+    ({'operation_date_from': '2026-11-05'}, {'middle', 'last'}),
+    ({'operation_date_to': '2026-11-05'}, {'first', 'middle'}),
+    ({'operation_date_from': '2026-11-05', 'operation_date_to': '2026-11-05'}, {'middle'}),
+    ({'stage_code': 'preparation'}, {'first', 'middle', 'undated'}),
+    ({'stage_code': 'preparation', 'operation_date_from': '2026-11-04', 'operation_date_to': '2026-11-05'}, {'first', 'middle'}),
+    ({'stage_code': 'serving', 'operation_date_to': '2026-11-05'}, set()),
+    ({}, {'first', 'middle', 'last', 'undated'}),
+])
+def test_dq_filters_match_inclusive_ledger_scope(dated_events, filters, names):
+    client, events = dated_events
+    query = {'site_id': str(SITE_ID), **filters}
+    response = client.get('/demo/v0.1/data-quality', params=query)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    ids = {row['event_id'] for row in body['records']}
+    assert ids == {events[name] for name in names}
+    assert body['summary']['event_count'] == len(body['records']) == len(names)
+    assert body['summary']['measurement_count'] == sum(len(row['measurement_ids']) for row in body['records'])
+    assert ids == {row['event_id'] for row in client.get('/demo/v0.1/events', params=query).json()['events']}
+    for event_id in ids:
+        detail = client.get(f'/demo/v0.1/events/{event_id}').json()
+        assert detail['event_id'] == event_id
+    assert client.get(f"/demo/v0.1/events/{events['undated']}").json()['operation_date'] is None
+
+
+@pytest.mark.parametrize('filters', [
+    {'operation_date_from': '2026-02-30'}, {'operation_date_to': '2026-13-01'},
+    {'operation_date_from': '20261105'}, {'operation_date_to': '2026-W45-1'},
+    {'operation_date_from': ''}, {'operation_date_from': '2026-11-06', 'operation_date_to': '2026-11-04'},
+    {'occurred_from': '2026-11-04T00:00:00Z'}, {'stage': 'preparation'},
+])
+def test_dq_rejects_invalid_dates_ranges_and_unsupported_parameters(database, filters):
+    client = TestClient(create_app())
+    response = client.get('/demo/v0.1/data-quality', params={'site_id': str(SITE_ID), **filters})
+    assert response.status_code == 422
+
+
+def test_filtered_dq_preserves_statuses_identity_and_read_only_data(dated_events, database):
+    from sqlalchemy import select
+    from fwi.infrastructure.database.models import WasteEvent, Measurement, AuditEvent
+    def snapshot():
+        with database() as session:
+            return {model.__tablename__: list(session.execute(select(model.__table__).order_by(*model.__table__.primary_key.columns)).mappings())
+                    for model in (WasteEvent, Measurement, AuditEvent)}
+    client, events = dated_events
+    before = snapshot()
+    query = {'site_id': str(SITE_ID), 'stage_code': 'preparation',
+             'operation_date_from': '2026-11-05', 'operation_date_to': '2026-11-05'}
+    body = client.get('/demo/v0.1/data-quality', params=query).json()
+    assert body['summary']['event_count'] == 1
+    assert body['summary']['measurement_count'] == 2
+    assert body['summary']['observation_counts']['missing'] == 1
+    assert body['summary']['observation_counts']['measured_zero'] == 1
+    assert body['summary']['observation_counts']['not_measured'] == 0
+    assert body['records'][0]['event_id'] == events['middle']
+    assert len(set(body['records'][0]['measurement_ids'])) == 2
+    estimated = client.get('/demo/v0.1/data-quality', params={'site_id': str(SITE_ID), 'stage_code': 'serving'}).json()
+    assert estimated['summary']['estimated_count'] == 1
+    assert snapshot() == before  # GET neither mutates source records nor appends business audit.
+
+
+def test_filtered_dq_reader_access_and_cross_site_concealment(dated_events):
+    client, _ = dated_events
+    filters = {'site_id': str(SITE_ID), 'stage_code': 'preparation', 'operation_date_from': '2026-11-05'}
+    reader = TestClient(create_app())
+    login_client(reader, 'site_a_reader', PASSWORDS['site_a_reader'])
+    assert reader.get('/demo/v0.1/data-quality', params=filters).json() == client.get('/demo/v0.1/data-quality', params=filters).json()
+    other = TestClient(create_app())
+    login_client(other, 'site_b_writer', PASSWORDS['site_b_writer'])
+    denied = other.get('/demo/v0.1/data-quality', params=filters)
+    assert denied.status_code == 404
+    assert 'records' not in denied.json()

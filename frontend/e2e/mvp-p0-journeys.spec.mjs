@@ -443,3 +443,68 @@ test('UX-01: normal operator flow has no UUID typing; desktop/mobile preserve re
   await screenshots('mobile-ledger');
   expect((await backend.snapshot()).sha256).toBe(proposed.sha256);
 });
+
+
+test('M3-01: kitchen-date/stage DQ filters preserve counts, null dates, identity and site scope', async ({ page, backend }, testInfo) => {
+  const first = await createEvent(page, { operationDate: '2026-11-04' });
+  const middle = await createEvent(page, { operationDate: '2026-11-05' });
+  await fillMeasurement(page, { gross: '0.40', tare: '0.40', net: '0' });
+  await page.getByLabel(/^Kondisi hasil pengukuran/).selectOption('measured_zero');
+  await submitMeasurement(page, middle);
+  await fillMeasurement(page, { gross: '2.40', tare: '0.40', net: '2.00' });
+  page.once('dialog', dialog => dialog.accept());
+  await page.getByLabel(/^Kondisi hasil pengukuran/).selectOption('missing');
+  await submitMeasurement(page, middle);
+  const last = await createEvent(page, { stage: 'serving', operationDate: '2026-11-06' });
+  const undated = await createEvent(page, { operationDate: '' });
+  const before = await backend.snapshot();
+  expect(before.counts).toMatchObject({ waste_events: 4, measurements: 2 });
+  expect(before.data.waste_events.find(e => e.event_id === undated).operation_date).toBeNull();
+  await page.goto('/backend-demo/data-quality');
+  await expect(page.getByLabel('Ringkasan hitungan')).toBeVisible();
+  await expect(page.getByLabel('Drill-down sumber')).toContainText('4 event');
+  await page.getByLabel('Tanggal kegiatan dapur dari').fill('2026-11-05');
+  await page.getByLabel('Tanggal kegiatan dapur sampai').fill('2026-11-05');
+  await page.getByLabel('Kode tahap kegiatan').fill('preparation');
+  const read = page.waitForResponse(r => new URL(r.url()).pathname === '/demo/v0.1/data-quality');
+  await page.getByRole('button', { name: 'Terapkan filter' }).click();
+  const filtered = await read;
+  expect(filtered.status()).toBe(200);
+  const data = await filtered.json();
+  expect(data.summary).toMatchObject({ event_count: 1, measurement_count: 2,
+    observation_counts: { measured_zero: 1, missing: 1, estimated: 0 } });
+  expect(data.records.map(r => r.event_id)).toEqual([middle]);
+  await expect(page.getByLabel('Filter aktif')).toContainText('2026-11-05');
+  await expect(page.getByLabel('Drill-down sumber')).toContainText('1 event');
+  await expect(page.getByRole('link', { name: middle, exact: true })).toHaveAttribute('href', `/backend-demo/events/${middle}`);
+  await expect(page.getByRole('link', { name: undated, exact: true })).toHaveCount(0);
+  await page.screenshot({ path: 'browser-evidence/m3-dq-desktop.png', fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: 'browser-evidence/m3-dq-mobile.png', fullPage: true });
+  await page.getByLabel('Tanggal kegiatan dapur dari').fill('2026-11-06');
+  await page.getByLabel('Tanggal kegiatan dapur sampai').fill('2026-11-04');
+  await page.getByRole('button', { name: 'Terapkan filter' }).click();
+  await expect(page.getByRole('alert')).toContainText('Tanggal mulai tidak boleh setelah tanggal sampai');
+  await page.getByRole('button', { name: 'Reset filter' }).click();
+  await expect(page.getByLabel('Drill-down sumber')).toContainText('4 event');
+  await expect(page.getByRole('link', { name: undated, exact: true })).toBeVisible();
+  expect((await backend.snapshot()).sha256).toBe(before.sha256);
+  const params = new URLSearchParams({ site_id: SITE_A, operation_date_from: '2026-11-05', operation_date_to: '2026-11-05', stage_code: 'preparation' });
+  const api = (query = params) => page.request.get(`/demo/v0.1/data-quality?${query}`, { headers: { origin: ORIGIN } });
+  const invalid = new URLSearchParams(params); invalid.set('operation_date_from', '2026-02-30');
+  expect((await api(invalid)).status()).toBe(422);
+  await page.getByRole('button', { name: 'Keluar', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Masuk ke FWI' })).toBeVisible();
+  await login(page, backend, 'site_a_reader');
+  const allowed = await api(); expect(allowed.status()).toBe(200);
+  expect((await allowed.json()).records.map(r => r.event_id)).toEqual([middle]);
+  await page.getByRole('button', { name: 'Keluar', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Masuk ke FWI' })).toBeVisible();
+  await login(page, backend, 'site_b_writer');
+  expect((await api()).status()).toBe(404);
+  const own = new URLSearchParams(params); own.set('site_id', SITE_B);
+  expect((await (await api(own)).json()).summary.event_count).toBe(0);
+  await testInfo.attach('m3-filter-evidence', { body: JSON.stringify({ first, middle, last, undated,
+    filtered: data, original_rows_unchanged: true }), contentType: 'application/json' });
+});
