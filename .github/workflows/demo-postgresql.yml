@@ -48,7 +48,8 @@ jobs:
       - run: npm run test:proxy
       - run: npm run build
   chromium-browser-integrity:
-    runs-on: ubuntu-latest
+    # Pin the image with preinstalled NSS tools; never install a fallback package.
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     services:
       postgres:
@@ -69,6 +70,8 @@ jobs:
     env:
       FWI_REQUIRE_POSTGRES: '1'
       FWI_BROWSER_RUN_TOKEN: '${{ github.run_id }}-${{ github.run_attempt }}'
+      FWI_LOCAL_SYNTHETIC_DEMO: '0'
+      FWI_TEST_TEMPORARY_TLS: '0'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -121,8 +124,131 @@ jobs:
         working-directory: frontend
       - run: npx playwright install --with-deps chromium
         working-directory: frontend
+      - name: Provision ephemeral loopback TLS and isolated Chromium trust
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v openssl >/dev/null
+          command -v certutil >/dev/null
+          umask 077
+          tls_dir="$(mktemp -d "$RUNNER_TEMP/fwi-ci-tls.XXXXXXXX")"
+          printf 'FWI_CI_TLS_DIR=%s\n' "$tls_dir" >> "$GITHUB_ENV"
+          printf '%s-%s\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" > "$tls_dir/run-owner"
+          openssl req -x509 -newkey rsa:2048 -nodes -sha256 -days 1 \
+            -subj '/CN=FWI ephemeral CI CA' -keyout "$tls_dir/ca.key" -out "$tls_dir/ca.pem" \
+            -addext 'basicConstraints=critical,CA:TRUE,pathlen:0' \
+            -addext 'keyUsage=critical,keyCertSign,cRLSign' >/dev/null 2>&1
+          openssl req -new -newkey rsa:2048 -nodes -sha256 -subj '/CN=127.0.0.1' \
+            -keyout "$tls_dir/server.key" -out "$tls_dir/server.csr" >/dev/null 2>&1
+          printf '%s\n' 'basicConstraints=critical,CA:FALSE' \
+            'keyUsage=critical,digitalSignature,keyEncipherment' 'extendedKeyUsage=serverAuth' \
+            'subjectAltName=IP:127.0.0.1' > "$tls_dir/server.ext"
+          openssl x509 -req -sha256 -days 1 -in "$tls_dir/server.csr" \
+            -CA "$tls_dir/ca.pem" -CAkey "$tls_dir/ca.key" -CAcreateserial \
+            -extfile "$tls_dir/server.ext" -out "$tls_dir/server.pem" >/dev/null 2>&1
+          openssl req -x509 -newkey rsa:2048 -nodes -sha256 -days 1 \
+            -subj '/CN=FWI deliberately unrelated CI CA' \
+            -keyout "$tls_dir/wrong-ca.key" -out "$tls_dir/wrong-ca.pem" \
+            -addext 'basicConstraints=critical,CA:TRUE' >/dev/null 2>&1
+          chmod 600 "$tls_dir/ca.key" "$tls_dir/server.key" "$tls_dir/wrong-ca.key"
+          openssl verify -CAfile "$tls_dir/ca.pem" -purpose sslserver \
+            -verify_ip 127.0.0.1 "$tls_dir/server.pem"
+          # NSS locations before/after Chromium M146 resolve to the same isolated DB.
+          # https://chromium.googlesource.com/chromium/src/+/main/docs/linux/cert_management.md
+          for profile in trusted missing wrong; do
+            home="$tls_dir/home-$profile"
+            db="$home/.local/share/pki/nssdb"
+            mkdir -p "$db" "$home/.pki"
+            certutil -N --empty-password -d "sql:$db"
+            ln -s "$db" "$home/.pki/nssdb"
+            if [[ "$profile" != missing ]]; then
+              ca="$tls_dir/ca.pem"
+              if [[ "$profile" == wrong ]]; then ca="$tls_dir/wrong-ca.pem"; fi
+              certutil -A -d "sql:$db" -n 'FWI ephemeral CI CA' -t 'C,,' -i "$ca"
+            fi
+          done
+          # Set before Node starts; explicit Vite Agent ca remains independently verified.
+          printf 'FWI_TLS_CERTFILE=%s/server.pem\n' "$tls_dir" >> "$GITHUB_ENV"
+          printf 'FWI_TLS_KEYFILE=%s/server.key\n' "$tls_dir" >> "$GITHUB_ENV"
+          printf 'FWI_BACKEND_CA_FILE=%s/ca.pem\n' "$tls_dir" >> "$GITHUB_ENV"
+          printf 'NODE_EXTRA_CA_CERTS=%s/ca.pem\n' "$tls_dir" >> "$GITHUB_ENV"
+          printf 'PLAYWRIGHT_BROWSERS_PATH=%s\n' "${PLAYWRIGHT_BROWSERS_PATH:-$HOME/.cache/ms-playwright}" >> "$GITHUB_ENV"
+      - name: Verify trusted TLS and missing or wrong CA fail closed
+        working-directory: frontend
+        shell: bash
+        run: |
+          set -euo pipefail
+          export HOME="$FWI_CI_TLS_DIR/home-trusted"
+          export XDG_DATA_HOME="$HOME/.local/share"
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          import { createServer, request } from 'node:https';
+          import { readFileSync, statSync } from 'node:fs';
+          import { once } from 'node:events';
+          import { spawnSync } from 'node:child_process';
+          import { chromium } from '@playwright/test';
+          assert.notEqual(process.env.NODE_TLS_REJECT_UNAUTHORIZED, '0');
+          const dir = process.env.FWI_CI_TLS_DIR;
+          assert.equal(statSync(dir).mode & 0o777, 0o700);
+          for (const name of ['ca.key', 'server.key', 'wrong-ca.key'])
+            assert.equal(statSync(`${dir}/${name}`).mode & 0o777, 0o600);
+          const server = createServer({ key: readFileSync(process.env.FWI_TLS_KEYFILE),
+            cert: readFileSync(process.env.FWI_TLS_CERTFILE) }, (_, response) => response.end('FWI CI TLS probe'));
+          server.listen(0, '127.0.0.1');
+          await once(server, 'listening');
+          const port = server.address().port;
+          function probe(ca) {
+            return new Promise((resolve, reject) => {
+              const req = request({ hostname: '127.0.0.1', port, agent: false, rejectUnauthorized: true,
+                ...(ca === undefined ? {} : { ca }) }, response => {
+                response.resume(); response.on('end', () => resolve(response.statusCode));
+              });
+              req.on('error', reject);
+              req.setTimeout(5000, () => req.destroy(new Error('TLS probe timeout')));
+              req.end();
+            });
+          }
+          try {
+            assert.equal(await probe(), 200); // Node extra CA, including Playwright health checks.
+            assert.equal(await probe(readFileSync(process.env.FWI_BACKEND_CA_FILE)), 200); // Vite explicit ca.
+            const certificateError = error => ['UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+              'UNABLE_TO_GET_ISSUER_CERT_LOCALLY', 'SELF_SIGNED_CERT_IN_CHAIN'].includes(error.code);
+            await assert.rejects(() => probe([]), certificateError);
+            await assert.rejects(() => probe(readFileSync(`${dir}/wrong-ca.pem`)), certificateError);
+            for (const key of ['FWI_TLS_CERTFILE', 'FWI_TLS_KEYFILE', 'FWI_BACKEND_CA_FILE']) {
+              const env = { ...process.env }; delete env[key];
+              const result = spawnSync(process.execPath, ['--input-type=module', '-e',
+                "await import('./playwright.config.mjs')"], { env, encoding: 'utf8' });
+              assert.notEqual(result.status, 0);
+              assert.match(result.stderr, /BLOCKED: existing Owner-authorized HTTPS certificate/);
+            }
+            // Chromium uses only a run-owned HOME/NSS DB; no system trust store is modified.
+            for (const profile of ['trusted', 'missing', 'wrong']) {
+              const home = `${dir}/home-${profile}`;
+              const browser = await chromium.launch({ env: { ...process.env, HOME: home,
+                XDG_DATA_HOME: `${home}/.local/share` } });
+              try {
+                const page = await browser.newPage();
+                const url = `https://127.0.0.1:${port}`;
+                if (profile === 'trusted') {
+                  await page.goto(url);
+                  assert.equal(await page.textContent('body'), 'FWI CI TLS probe');
+                } else {
+                  await assert.rejects(() => page.goto(url), /ERR_CERT_AUTHORITY_INVALID/);
+                }
+              } finally { await browser.close(); }
+            }
+            console.log('TLS verified: Node/Vite CA and Chromium trust; missing/wrong CA rejected; no bypass.');
+          } finally {
+            server.closeAllConnections();
+            await new Promise(resolve => server.close(resolve));
+          }
+          JS
       - name: Linux Chromium Browser E2E (no retries, one worker)
         run: |
+          set -euo pipefail
+          export HOME="$FWI_CI_TLS_DIR/home-trusted"
+          export XDG_DATA_HOME="$HOME/.local/share"
           # Keep workflow DSNs/public password fixtures out of report gitDiff metadata.
           # The wrapper is CI-temporary; the repository Playwright config is unchanged.
           node --input-type=module <<'JS'
@@ -136,6 +262,31 @@ jobs:
       - name: Always clean and verify exact owned schemas
         if: always()
         run: python scripts/browser_e2e_harness.py cleanup
+      - name: Always remove run-owned TLS keys and isolated browser trust
+        if: always()
+        shell: bash
+        run: |
+          # Do not leave later Node artifact actions pointing at the deleted CA.
+          printf 'NODE_EXTRA_CA_CERTS=\n' >> "$GITHUB_ENV"
+          python - <<'PYTLS'
+          import os, shutil
+          from pathlib import Path
+          raw = os.environ.get('FWI_CI_TLS_DIR')
+          if raw:
+              path = Path(raw)
+              target = path.resolve()
+              root = Path(os.environ['RUNNER_TEMP']).resolve()
+              if path.is_symlink() or target.parent != root or not target.name.startswith('fwi-ci-tls.'):
+                  raise RuntimeError('TLS cleanup target outside exact run-owned scope')
+              if target.exists():
+                  owner = f"{os.environ['GITHUB_RUN_ID']}-{os.environ['GITHUB_RUN_ATTEMPT']}"
+                  if target.stat().st_uid != os.getuid() or (target / 'run-owner').read_text().strip() != owner:
+                      raise RuntimeError('TLS cleanup ownership mismatch')
+                  shutil.rmtree(target)
+              if target.exists():
+                  raise RuntimeError('TLS resource cleanup incomplete')
+          print('Run-owned TLS keys and browser trust cleanup verified.')
+          PYTLS
       - name: Upload browser report, failure screenshot/trace and database evidence
         if: always()
         uses: actions/upload-artifact@v4

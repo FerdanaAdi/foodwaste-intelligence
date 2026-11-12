@@ -1,6 +1,7 @@
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { installDomainFetch, prepareSession } from './backend-auth-fixture';
 import { MemoryRouter, useNavigate } from "react-router";
 import App from "@/App";
 import fixture from "./fixtures/backend-detail.json";
@@ -8,7 +9,8 @@ import { CAPTURE_JOURNAL_KEY } from "@/backend/write";
 
 const event = { ...fixture.event, occurred_at: "2026-11-06T12:00:00+08:00", event_type: "at_risk_surplus", organization_id: "11111111-1111-4111-8111-111111111111", site_id: "22222222-2222-4222-8222-222222222222" };
 function response(value: unknown, status = 200) { return { status, ok: status >= 200 && status < 300, json: async () => value } as Response; }
-function mount(path = "/backend-demo/capture") { return render(<MemoryRouter initialEntries={[path]}><App /></MemoryRouter>); }
+function mount(path = "/backend-demo/capture") { installDomainFetch(fetch); return render(<MemoryRouter initialEntries={[path]}><App /></MemoryRouter>); }
+beforeEach(async () => { sessionStorage.clear(); await prepareSession(); });
 afterEach(() => { vi.unstubAllGlobals(); sessionStorage.clear(); vi.restoreAllMocks(); });
 
 describe("FWI-INT-005 backend capture page", () => {
@@ -22,7 +24,7 @@ describe("FWI-INT-005 backend capture page", () => {
     expect(await screen.findByText(/Hasil penyimpanan belum dapat dipastikan \(UNKNOWN\)/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Simpan event backend" })).toBeDisabled();
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(sessionStorage.getItem(CAPTURE_JOURNAL_KEY)!)).toMatchObject({ operation: "event", state: "unknown" });
+    expect(sessionStorage.getItem(CAPTURE_JOURNAL_KEY)).toMatch(/^[0-9a-f-]{36}$/);
   });
   it("W-23: recover known committed event on deep link via GET only, not POST", async () => {
     const fetchMock = vi.fn(async (url: string, _options?: { method?: string }) => response(url.endsWith("/measurements") ? [] : event));
@@ -41,7 +43,7 @@ describe("FWI-INT-005 backend capture page", () => {
     await user.type(screen.getByLabelText(/Waktu kejadian ISO/), "2026-11-06T12:00:00+08:00");
     const submit = screen.getByRole("button", { name: "Simpan event backend" });
     fireEvent.click(submit); fireEvent.click(submit);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     expect(screen.getByText(/Sedang menyimpan ke backend/)).toBeInTheDocument();
     expect(screen.queryByText(/Hasil penyimpanan belum dapat dipastikan \(UNKNOWN\)/)).not.toBeInTheDocument();
     resolve(response(event, 201));
@@ -100,18 +102,19 @@ describe("FWI-INT-005 backend capture page", () => {
   });
   it("W-20: unknown pending journal survives remount and blocks even with valid input", async () => {
     const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);
-    sessionStorage.setItem(CAPTURE_JOURNAL_KEY, JSON.stringify({ operation: "event", eventId: null, state: "pending" }));
+    sessionStorage.setItem(CAPTURE_JOURNAL_KEY, 'cccccccc-cccc-4ccc-8ccc-cccccccccccc');
     const view = mount();
-    expect(screen.getByText(/Hasil penyimpanan belum dapat dipastikan \(UNKNOWN\)/)).toBeInTheDocument();
+    expect(await screen.findByText(/Hasil penyimpanan belum dapat dipastikan \(UNKNOWN\)/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Simpan event backend" })).toBeDisabled();
     view.unmount();
     mount();
-    expect(screen.getByRole("button", { name: "Simpan event backend" })).toBeDisabled();
+    expect(await screen.findByRole("button", { name: "Simpan event backend" })).toBeDisabled();
     expect(fetchMock).not.toHaveBeenCalled();
   });
   it("DemoStore ledger remains unchanged by opening backend capture", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => response(event)));
     mount();
+    await screen.findByRole('button', { name: 'Simpan event backend' });
     expect(screen.getByText(/Terpisah sepenuhnya dari QuickCapture/)).toBeInTheDocument();
     expect(screen.queryByText("EVT-DEMO-2026-0001")).not.toBeInTheDocument();
   });
@@ -124,7 +127,7 @@ describe("FWI-INT-005 backend capture page", () => {
     await user.click(screen.getByRole("button", { name: "Simpan event backend" }));
     expect(await screen.findByText(/Tidak ada POST dikirim/)).toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(screen.getByRole("button", { name: /buka kunci/ })).not.toBeDisabled();
+    expect(screen.queryByRole("button", { name: /buka kunci/ })).not.toBeInTheDocument();
   });
   it("invalid route context cannot retain or submit the previously loaded event", async () => {
     const fetchMock = vi.fn(async (url: string) => response(url.endsWith('/measurements') ? [] : event));
@@ -133,6 +136,7 @@ describe("FWI-INT-005 backend capture page", () => {
       const navigate = useNavigate();
       return <button onClick={() => navigate('/backend-demo/capture?event=invalid')}>Switch invalid context</button>;
     }
+    installDomainFetch(fetchMock);
     render(<MemoryRouter initialEntries={[`/backend-demo/capture?event=${event.event_id}`]}><SwitchRoute /><App /></MemoryRouter>);
     await screen.findByText(/Event dikonfirmasi/);
     fireEvent.click(screen.getByRole('button', { name: 'Switch invalid context' }));

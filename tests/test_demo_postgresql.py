@@ -15,7 +15,8 @@ from alembic import command
 from alembic.config import Config
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
-from fastapi.testclient import TestClient
+from auth_support import PASSWORDS, TestClient
+from fwi.infrastructure.database.security_seed import seed_security
 from sqlalchemy import func, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
@@ -38,7 +39,7 @@ def test_read_only_frontend_contract_fixture_leaves_all_data_and_audit_unchanged
     def snapshot_all():
         with database() as session:
             return {table.name: list(session.execute(select(table).order_by(*table.primary_key.columns)).mappings())
-                    for table in Base.metadata.sorted_tables}
+                    for table in Base.metadata.sorted_tables if not table.name.startswith('auth_')}
     try:
         with TestClient(app) as client:
             event_input = {k: fixture['event'][k] for k in ('organization_id', 'site_id', 'event_type', 'occurred_at')}
@@ -121,6 +122,7 @@ def database(monkeypatch):
             config.attributes['connection'] = connection
             command.upgrade(config, 'head')
         seed_demo(factory)
+        seed_security(factory, PASSWORDS)
         with factory.kw['bind'].connect() as connection:
             assert compare_metadata(MigrationContext.configure(connection), Base.metadata) == []
         monkeypatch.setenv('FWI_DATABASE_URL', scoped)
@@ -159,7 +161,7 @@ def test_committed_write_can_have_unknown_transport_outcome(database, operation)
     class LoseAcknowledgement(BaseHTTPMiddleware):
         async def dispatch(self, request, call_next):
             response = await call_next(request)
-            if request.method == 'POST' and response.status_code == 201:
+            if request.method == 'POST' and request.url.path.startswith('/demo/v0.1/') and response.status_code == 201:
                 return JSONResponse({'detail': 'synthetic lost acknowledgement after commit'}, status_code=503)
             return response
     try:
@@ -182,6 +184,7 @@ def test_committed_write_can_have_unknown_transport_outcome(database, operation)
 
 def test_persistence_across_restart_and_remeasurement(database):
     app = create_app()
+    initial_audits = counts(database)[2]
     with TestClient(app) as client:
         event_id = new_event(client)
         first = client.post(f'/demo/v0.1/events/{event_id}/measurements', json=measurement_payload())
@@ -197,7 +200,7 @@ def test_persistence_across_restart_and_remeasurement(database):
             assert [r['net'] for r in records] == ['2.0', '3']
             assert {r['event_id'] for r in records} == {event_id}
             assert all(r['provenance'] == 'synthetic fixture' for r in records)
-            assert counts(database) == (1, 2, 5)  # org/site/event/two measurements audited
+            assert counts(database) == (1, 2, initial_audits + 3)
     finally:
         restarted.state.session_factory.kw['bind'].dispose()
 
@@ -228,8 +231,8 @@ def test_audit_failure_rolls_back_data_and_audit(database, operation):
         with TestClient(app) as client:
             event_id = new_event(client)
             before = counts(database)
-            def fail_after_audit(session, record):
-                original(session, record)  # both data AND audit have reached PostgreSQL
+            def fail_after_audit(session, record, actor=None):
+                original(session, record, actor)  # both data AND audit have reached PostgreSQL
                 raise SQLAlchemyError('synthetic failure after audit flush')
             with patch.object(demo, 'audit', fail_after_audit):
                 if operation == 'event':

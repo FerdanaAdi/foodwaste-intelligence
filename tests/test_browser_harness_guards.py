@@ -49,6 +49,16 @@ def test_manifest_path_cannot_escape_owned_directory():
         harness.manifest_path('../../unrelated')
 
 
+def test_browser_serve_refuses_missing_tls_before_database_access(monkeypatch):
+    for key in ('FWI_TLS_CERTFILE', 'FWI_TLS_KEYFILE', 'FWI_BACKEND_CA_FILE'):
+        monkeypatch.delenv(key, raising=False)
+    def must_not_connect(_):
+        raise AssertionError('database access before TLS approval')
+    monkeypatch.setattr(harness, 'create_engine_for_url', must_not_connect)
+    with pytest.raises(RuntimeError, match='approved existing TLS files required'):
+        harness.serve()
+
+
 def test_evidence_replace_retries_only_transient_file_permission_error(monkeypatch, tmp_path):
     replace = Path.replace
     calls = []

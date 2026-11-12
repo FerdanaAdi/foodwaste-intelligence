@@ -3,19 +3,36 @@ import { DEMO_BANNER, HELD_KPIS } from "@/domain/types";
 import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
+  { to: "/backend-operations", label: "Operasi P1 (kandidat)" },
+  { to: "/backend-production", label: "Produksi (kandidat)" },
+  { to: "/backend-distribution", label: "Distribusi (kandidat)" },
+  { to: "/backend-insights", label: "Insight (kandidat)" },
   { to: "/", label: "Dashboard Mutu Data", end: true },
   { to: "/events", label: "Ledger Event" },
   { to: "/capture", label: "Capture Cepat" },
   { to: "/review", label: "Pratinjau Review & Audit" },
   { to: "/export", label: "Pratinjau Ekspor CSV" },
+  { to: "/demo/data-quality", label: "Mutu Data (fixture)" },
+  { to: "/demo/master-data", label: "Master Data (fixture)" },
+  { to: "/demo/evidence", label: "Bukti (fixture)" },
+  { to: "/demo/export", label: "Ekspor (belum tersedia)" },
   { to: "/backend-demo", label: "Detail Backend (read-only)" },
+  { to: "/backend-demo/ledger", label: "Ledger Backend (live)" },
+  { to: "/backend-demo/data-quality", label: "Mutu Data Backend (live)" },
+  { to: "/backend-demo/master", label: "Master Data Backend (live)" },
+  { to: "/backend-demo/evidence", label: "Bukti Backend (live)" },
+  { to: "/backend-demo/review", label: "Review Backend (proposal)" },
+  { to: "/backend-demo/export", label: "Ekspor Backend (CSV live)" },
   { to: "/backend-demo/capture", label: "Capture Backend (sintetis)" },
 ];
 
 export default function AppLayout() {
   const location = useLocation();
   const backendMode = location.pathname.startsWith("/backend-demo");
+  const p1Mode = ["/backend-operations", "/backend-production", "/backend-distribution", "/backend-insights"].includes(location.pathname);
   const backendCapture = location.pathname.startsWith("/backend-demo/capture");
+  const fixtureMode = location.pathname.startsWith("/demo/");
+  const exportUnavailable = location.pathname === "/demo/export";
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
       <a
@@ -42,7 +59,8 @@ export default function AppLayout() {
             <p
               className="rounded border border-slate-200 px-2 py-1 text-xs text-slate-600"
             >
-              {backendCapture ? "Sumber: API backend sintetis (write demo)" : backendMode ? "Sumber: API backend (read-only)" : "Sumber: DemoStore in-memory"}
+              {p1Mode ? "Sumber: API backend P1/P2 kandidat sintetis" : backendCapture ? "Sumber: API backend sintetis (write demo)" : backendMode ? "Sumber: API backend (read-only)"
+                : exportUnavailable ? "Ekspor backend: belum tersedia" : fixtureMode ? "Sumber: fixture sintetis (read-only)" : "Sumber: DemoStore in-memory"}
             </p>
           </div>
           <nav aria-label="Navigasi utama" className="overflow-x-auto">
@@ -80,8 +98,10 @@ export default function AppLayout() {
         <p>
           {backendCapture ? "Capture melalui API FastAPI/PostgreSQL sintetis lokal. Tidak ada fallback ke DemoStore."
             : backendMode ? "Halaman ini membaca API FastAPI/PostgreSQL lokal. Kegagalan API tidak diganti data in-memory."
+            : exportUnavailable ? "Ekspor backend belum tersedia. Tidak ada permintaan ekspor atau unduhan berkas."
+            : fixtureMode ? "Fixture sintetis terpisah dari API backend dan DemoStore; bukan data tersimpan atau fallback saat backend gagal. Filter bukan otorisasi."
             : "Sumber DemoStore in-memory: data sementara di browser, direset saat reload; tidak disimpan ke backend."}
-          {" "}Demo sintetis terisolasi; autentikasi dan penyimpanan evidence belum tersedia.
+          {" "}Demo sintetis terisolasi; backend memerlukan sesi sintetis HTTPS. Evidence storage belum tersedia; dashboard/ledger in-memory tidak memakai sesi backend.
         </p>
         <p>
           KPI {HELD_KPIS.join(", ")} berstatus HELD dan tidak dihitung di UI ini. Bukan sistem

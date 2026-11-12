@@ -80,9 +80,19 @@ class ValidationRecord:
     """Minimal validation history, separate from the measurement observation."""
 
     validation_record_id: str
-    measurement_id: str
+    measurement_id: str | None
     validation_status: str  # PROVISIONAL vocabulary; no workflow implied.
     recorded_at: datetime
+    # Additive history metadata. Legacy four-argument construction remains valid;
+    # admission to ReviewHistory requires all explicit metadata below.
+    target_type: str = "measurement"
+    target_id: str | None = None
+    actor_id: str | None = None
+    source: str | None = None
+    reason: str | None = None
+    provenance: str | None = None
+    rule_id: str | None = None
+    outcome: bool | None = None
 
 
 def repeated_measurements(event: MaterialWasteEvent, measurements: list[MeasurementRecord]) -> list[MeasurementRecord]:

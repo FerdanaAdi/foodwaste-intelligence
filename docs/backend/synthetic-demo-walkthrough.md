@@ -1,5 +1,11 @@
 # FWI-DEMO-001 — Demo sintetis lokal
 
+> **Historical pre-auth walkthrough.** On the current security task branch the
+> API is protected: HTTP ports/commands below no longer provide a capture demo.
+> Follow [FWI-SEC-01C](FWI-SEC-01C.md) for the authenticated HTTPS boundary.
+> Real authenticated browser verification remains BLOCKED until existing approved
+> TLS files are available. Historical demo results are not authenticated evidence.
+
 Hanya untuk presentasi sintetis lokal, bukan P0 lengkap atau sistem resmi BGN.
 API belum diautentikasi; jangan bind ke jaringan publik. OP-08/FI-02/NI-03 HELD.
 Dashboard/ledger biasa tetap DemoStore in-memory, bukan laporan PostgreSQL.

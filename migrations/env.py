@@ -4,6 +4,7 @@ import os
 
 from alembic import context
 
+import fwi.infrastructure.database.models_p1  # register candidate tables
 from fwi.infrastructure.database.models import Base
 from fwi.infrastructure.database.session import create_engine_for_url
 

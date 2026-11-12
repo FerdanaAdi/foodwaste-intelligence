@@ -1,4 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { MassValue } from '@/components/measurement/MeasurementDisplay';
+import { EmptyState, LoadingState, ServiceUnavailableState } from '@/components/states/DisplayStates';
 import { Link, useNavigate, useParams } from "react-router";
 import { isUUID, type BackendEvent, type BackendMeasurement } from "@/backend/contract";
 import { readBackendEvent, readBackendMeasurements } from "@/backend/client";
@@ -8,9 +10,20 @@ const statuses = {
   observed: "Teramati", estimated: "Estimasi", missing: "Missing — nilai tidak tersedia",
   measured_zero: "Nol terukur", not_measured: "Tidak diukur",
 };
-function Fields({ values }: { values: Record<string, string> }) {
+function Fields({ values }: { values: Record<string, ReactNode> }) {
   return <dl className="grid gap-3 sm:grid-cols-2">{Object.entries(values).map(([label, value]) =>
     <div key={label}><dt className="text-sm text-slate-600">{label}</dt><dd className="break-all whitespace-pre-wrap">{value}</dd></div>)}</dl>;
+}
+function MeasurementSummary({ records }: { records: BackendMeasurement[] }) {
+  return <section className="space-y-3 rounded border bg-white p-4" aria-label="Ringkasan pengukuran backend">
+    <h2 className="text-lg font-semibold">Ringkasan pengukuran event ini</h2>
+    <Fields values={{
+      "Jumlah measurement pada respons": records.length,
+      ...Object.fromEntries((Object.keys(statuses) as BackendMeasurement["observation_status"][]).map(status =>
+        [`Jumlah record ${status}`, records.filter(m => m.observation_status === status).length])),
+    }} />
+    <p className="text-sm">Hitungan record dari respons measurement untuk event ini. Hitungan ini tidak menyatakan kelengkapan atau mutu data; status validasi tidak tersedia pada API.</p>
+  </section>;
 }
 function BackendDetail({ id }: { id: string }) {
   const [event, setEvent] = useState<Result<BackendEvent>>({ kind: "loading" });
@@ -27,27 +40,32 @@ function BackendDetail({ id }: { id: string }) {
     return () => { active = false; controller.abort(); };
   }, [id, attempt]);
   return <div className="space-y-5" aria-live="polite">
-    <button className="rounded border px-4 py-2" onClick={() => setAttempt(value => value + 1)}>Muat ulang / coba lagi</button>
-    {event.kind === "loading" && <p role="status">Memuat event backend…</p>}
-    {event.kind === "error" && <p role="alert">Event gagal diambil: {event.message} Riwayat tidak ditampilkan tanpa event yang terverifikasi.</p>}
+    <button className="rounded border px-4 py-2" onClick={() => {
+      setEvent({ kind: "loading" });
+      setMeasurements({ kind: "loading" });
+      setAttempt(value => value + 1);
+    }}>Muat ulang / coba lagi</button>
+    {event.kind === "loading" && <LoadingState label="Memuat event backend…" />}
+    {event.kind === "error" && <ServiceUnavailableState detail={`Event gagal diambil: ${event.message} Riwayat tidak ditampilkan tanpa event yang terverifikasi.`} />}
     {event.kind === "ready" && <>
       <section className="rounded border bg-white p-4" aria-label="Detail event backend">
         <h2 className="mb-3 text-lg font-semibold">Detail event backend</h2>
         <Fields values={{ "Event UUID": event.value.event_id, "Organization UUID": event.value.organization_id, "Site UUID": event.value.site_id,
           "Jenis event backend (provisional)": event.value.event_type, "Waktu kejadian (offset asli respons)": event.value.occurred_at, "Waktu pencatatan event": event.value.recorded_at }} />
       </section>
+      {measurements.kind === "ready" && <MeasurementSummary records={measurements.value} />}
       <section className="space-y-3" aria-label="Riwayat pengukuran backend">
         <h2 className="text-lg font-semibold">Seluruh riwayat pengukuran</h2>
-        {measurements.kind === "loading" && <p role="status">Memuat riwayat pengukuran…</p>}
-        {measurements.kind === "error" && <p role="alert">Riwayat gagal diambil: {measurements.message} Kelengkapan riwayat belum diketahui.</p>}
+        {measurements.kind === "loading" && <LoadingState label="Memuat riwayat pengukuran…" />}
+        {measurements.kind === "error" && <ServiceUnavailableState detail={`Riwayat gagal diambil: ${measurements.message} Kelengkapan riwayat belum diketahui.`} />}
         {measurements.kind === "ready" && (measurements.value.length === 0
-          ? <p>Belum ada measurement untuk event ini. Ini bukan nol terukur.</p>
+          ? <EmptyState title="Belum ada measurement untuk event ini. Ini bukan nol terukur." />
           : measurements.value.map(m => <article key={m.measurement_id} className="rounded border bg-white p-4">
             <h3 className="mb-3 break-all font-mono">{m.measurement_id}</h3>
             <Fields values={{ "Event UUID": m.event_id, "Status observasi": `${statuses[m.observation_status]} (${m.observation_status})`,
-              "Gross": m.gross === null ? "Tidak tersedia (null)" : `${m.gross} ${m.original_unit}`,
-              "Tare": m.tare === null ? "Tidak tersedia (null)" : `${m.tare} ${m.original_unit}`,
-              "Net": m.net === null ? "Tidak tersedia (null)" : `${m.net} ${m.original_unit}`,
+              ...Object.fromEntries((['Gross','Tare','Net'] as const).map(field => [field,
+                <MassValue key={field} field={field} value={m[field.toLowerCase() as 'gross'|'tare'|'net']}
+                  unit={m.original_unit} observationStatus={m.observation_status} absentLabel="Tidak tersedia (null)" />])),
               "Unit asli": m.original_unit, "Mass basis (provisional)": m.mass_basis, "Metode": m.measurement_method,
               "Provenance": m.provenance, "Waktu pengukuran": m.measured_at, "Waktu pencatatan measurement": m.recorded_at }} />
           </article>))}

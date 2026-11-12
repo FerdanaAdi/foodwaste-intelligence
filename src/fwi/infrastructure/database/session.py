@@ -44,7 +44,7 @@ def create_engine_for_url(database_url: str) -> Engine:
             "FWI only accepts PostgreSQL database URLs (ADR-002); "
             f"got: {database_url.split(':', 1)[0]}:..."
         )
-    return create_engine(database_url, pool_pre_ping=True)
+    return create_engine(database_url, pool_pre_ping=True, isolation_level='READ COMMITTED')
 
 
 def create_session_factory(database_url: str) -> sessionmaker[Session]:

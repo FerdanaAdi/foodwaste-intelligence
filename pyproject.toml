@@ -11,6 +11,7 @@ description = "FoodWaste Intelligence (FWI) backend - synthetic-data prototype"
 requires-python = ">=3.14,<3.15"
 dynamic = ["version"]
 dependencies = [
+    "argon2-cffi==25.1.0",
     "fastapi==0.146.0",
     "uvicorn==0.54.0",
     "SQLAlchemy==2.1.8",
