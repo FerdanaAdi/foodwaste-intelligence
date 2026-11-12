@@ -128,3 +128,48 @@ def test_export_content_type_filename_and_identity_agree(database, dataset, medi
         assert isinstance(response.json(), dict)
     else:
         assert len(rows(response.content)) == 1
+
+
+@pytest.mark.parametrize('dataset', ['events', 'measurements', 'metadata'])
+def test_stage_export_retains_exact_scope_and_repeated_observations(database, dataset):
+    client = TestClient(create_app())
+    matched = new_event(client, stage_code='preparation', operation_date='2026-11-05')
+    other_stage = new_event(client, stage_code='serving', operation_date='2026-11-05')
+    other_date = new_event(client, stage_code='preparation', operation_date='2026-11-04')
+    zero = new_measurement(client, matched['event_id'], gross='0.40', tare='0.40', net='0', observation_status='measured_zero')
+    missing = new_measurement(client, matched['event_id'], gross=None, tare=None, net=None, observation_status='missing')
+    query = {'site_id': str(SITE_ID), 'dataset': dataset, 'stage_code': 'preparation',
+             'event_type': 'at_risk_surplus', 'operation_date_from': '2026-11-05', 'operation_date_to': '2026-11-05'}
+    response = client.get('/demo/v0.1/export', params=query)
+    assert response.status_code == 200
+    assert response.headers['x-fwi-export-scope-site'] == str(SITE_ID)
+    assert response.headers['x-fwi-export-events'] == '1'
+    assert response.headers['x-fwi-export-measurements'] == '2'
+    if dataset == 'metadata':
+        metadata = response.json()
+        assert metadata['counts'] == {'events': 1, 'measurements': 2}
+        assert metadata['scope_site_ids'] == [str(SITE_ID)]
+        assert metadata['held_kpis'] == ['OP-08', 'FI-02', 'NI-03']
+        assert response.headers['content-type'].startswith('application/json')
+        assert response.headers['content-disposition'].endswith('.json"')
+    else:
+        exported = rows(response.content)
+        assert {row['event_id'] for row in exported} == {matched['event_id']}
+        assert response.headers['content-type'].startswith('text/csv')
+        assert response.headers['content-disposition'].endswith('.csv"')
+        if dataset == 'events':
+            assert len(exported) == 1 and exported[0]['stage_code'] == 'preparation'
+        else:
+            assert len(exported) == 2
+            by_id = {row['measurement_id']: row for row in exported}
+            assert by_id[zero['measurement_id']]['net'] == '0'
+            assert by_id[zero['measurement_id']]['observation_status'] == 'measured_zero'
+            assert by_id[missing['measurement_id']]['net'] == r'\N'
+            assert by_id[missing['measurement_id']]['observation_status'] == 'missing'
+    # Omitting stage broadens only within the already authorized date/site scope.
+    unfiltered = client.get('/demo/v0.1/export', params={key: value for key, value in query.items() if key != 'stage_code'})
+    assert unfiltered.status_code == 200 and unfiltered.headers['x-fwi-export-events'] == '2'
+    foreign = TestClient(create_app())
+    login_client(foreign, 'site_b_writer', PASSWORDS['site_b_writer'])
+    denied = foreign.get('/demo/v0.1/export', params=query)
+    assert denied.status_code == 404 and matched['event_id'] not in denied.text

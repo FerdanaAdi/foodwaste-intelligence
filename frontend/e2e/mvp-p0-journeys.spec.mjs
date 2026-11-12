@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { fillTimestamp, openSourceDetails } from './ux-helpers.mjs';
 /** FWI MVP-P0 authorized browser journeys (Tasks: ledger, DQ, master, evidence,
  *  review, export) over real Vite->FastAPI->PostgreSQL with temporary loopback TLS.
@@ -507,4 +509,99 @@ test('M3-01: kitchen-date/stage DQ filters preserve counts, null dates, identity
   expect((await (await api(own)).json()).summary.event_count).toBe(0);
   await testInfo.attach('m3-filter-evidence', { body: JSON.stringify({ first, middle, last, undated,
     filtered: data, original_rows_unchanged: true }), contentType: 'application/json' });
+});
+
+
+test('M3-02: stage-scoped CSV/JSON downloads invalidate old results and keep source records intact', async ({ page, backend }, testInfo) => {
+  const matched = await createEvent(page, { operationDate: '2026-11-05' });
+  await fillMeasurement(page, { gross: '0.40', tare: '0.40', net: '0' });
+  await page.getByLabel(/^Kondisi hasil pengukuran/).selectOption('measured_zero');
+  await submitMeasurement(page, matched);
+  await fillMeasurement(page, { gross: '2.40', tare: '0.40', net: '2.00' });
+  page.once('dialog', dialog => dialog.accept());
+  await page.getByLabel(/^Kondisi hasil pengukuran/).selectOption('missing');
+  await submitMeasurement(page, matched);
+  const otherStage = await createEvent(page, { stage: 'serving', operationDate: '2026-11-05' });
+  const otherDate = await createEvent(page, { operationDate: '2026-11-04' });
+  const before = await backend.snapshot();
+  expect(before.counts).toMatchObject({ waste_events: 3, measurements: 2 });
+  await page.goto('/backend-demo/export');
+  await page.getByLabel('Kode tahap kegiatan').fill('preparation');
+  await page.getByLabel('Jenis event').selectOption('at_risk_surplus');
+  await page.getByLabel('Tanggal operasi dari').fill('2026-11-05');
+  await page.getByLabel('Tanggal operasi sampai').fill('2026-11-05');
+  let release;
+  const held = new Promise(resolve => { release = resolve; });
+  await page.route(url => url.pathname === '/demo/v0.1/export', async route => {
+    await held; await route.continue();
+  }, { times: 1 });
+  const verified = [];
+  const csvHashes = {};
+  for (const dataset of ['events', 'measurements', 'metadata']) {
+    await page.getByLabel('Dataset').selectOption(dataset);
+    await expect(page.getByRole('button', { name: /^Unduh / })).toHaveCount(0);
+    const responsePromise = page.waitForResponse(r => new URL(r.url()).pathname === '/demo/v0.1/export');
+    await page.getByRole('button', { name: 'Ambil ekspor dari server' }).click();
+    if (dataset === 'events') {
+      try {
+        for (const label of ['Dataset', 'Jenis event', 'Kode tahap kegiatan', 'Tanggal operasi dari', 'Tanggal operasi sampai'])
+          await expect(page.getByLabel(label)).toBeDisabled();
+      } finally { release(); }
+    }
+    const response = await responsePromise;
+    expect(response.status()).toBe(200);
+    expect(Object.fromEntries(new URL(response.url()).searchParams)).toEqual({ site_id: SITE_A, dataset,
+      stage_code: 'preparation', event_type: 'at_risk_surplus', operation_date_from: '2026-11-05', operation_date_to: '2026-11-05' });
+    expect(response.headers()['x-fwi-export-events']).toBe('1');
+    expect(response.headers()['x-fwi-export-measurements']).toBe('2');
+    expect(response.headers()['x-fwi-export-scope-site']).toBe(SITE_A);
+    const downloadPromise = page.waitForEvent('download');
+    await page.getByRole('button', { name: /^Unduh / }).click();
+    const download = await downloadPromise;
+    expect(download.suggestedFilename()).toMatch(dataset === 'metadata' ? /\.json$/ : /\.csv$/);
+    const bytes = readFileSync(await download.path());
+    const text = bytes.toString('utf8');
+    if (dataset === 'metadata') {
+      expect(response.headers()['content-type']).toContain('application/json');
+      expect(bytes).toEqual(await response.body());
+      const metadata = JSON.parse(text);
+      expect(metadata).toMatchObject({ counts: { events: 1, measurements: 2 }, scope_site_ids: [SITE_A] });
+      for (const name of ['events.csv', 'measurements.csv']) expect(metadata.files[name].sha256).toBe(csvHashes[name]);
+    } else {
+      expect(response.headers()['content-type']).toContain('text/csv');
+      // Chromium CDP may omit the BOM in response.body(); verify the actual download
+      // against a raw API response and the independent metadata file digest instead.
+      const raw = await page.request.get(response.url(), { headers: { origin: ORIGIN }, maxRetries: 0 });
+      expect(raw.status()).toBe(200);
+      expect(bytes).toEqual(await raw.body());
+      expect([...bytes.subarray(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
+      csvHashes[`${dataset}.csv`] = createHash('sha256').update(bytes).digest('hex');
+      expect(text).toContain(matched); expect(text).not.toContain(otherStage); expect(text).not.toContain(otherDate);
+      expect(text.trim().split(/\r?\n/)).toHaveLength(dataset === 'events' ? 2 : 3);
+      if (dataset === 'measurements') {
+        expect(text).toContain('"measured_zero"'); expect(text).toContain('"missing"');
+        expect(text).toContain('"0"'); expect(text).toContain('"\\N"');
+      }
+    }
+    verified.push({ dataset, filename: download.suggestedFilename(), events: 1, measurements: 2 });
+    await download.delete();
+    await page.getByLabel('Kode tahap kegiatan').fill('serving');
+    await expect(page.getByRole('button', { name: /^Unduh / })).toHaveCount(0);
+    await page.getByLabel('Kode tahap kegiatan').fill('preparation');
+  }
+  await page.getByLabel('Kode tahap kegiatan').fill('');
+  const emptyStage = page.waitForResponse(r => new URL(r.url()).pathname === '/demo/v0.1/export');
+  await page.getByRole('button', { name: 'Ambil ekspor dari server' }).click();
+  const allStages = await emptyStage;
+  expect(new URL(allStages.url()).searchParams.has('stage_code')).toBe(false);
+  expect((await allStages.json()).counts).toEqual({ events: 2, measurements: 2 });
+  expect((await backend.snapshot()).sha256).toBe(before.sha256);
+  expect((await page.request.get(`/demo/v0.1/export?site_id=${SITE_B}&dataset=events&stage_code=preparation`,
+    { headers: { origin: ORIGIN } })).status()).toBe(404);
+  await page.getByRole('button', { name: 'Keluar', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Masuk ke FWI' })).toBeVisible();
+  expect((await page.request.get(`/demo/v0.1/export?site_id=${SITE_A}&dataset=events&stage_code=preparation`,
+    { headers: { origin: ORIGIN } })).status()).toBe(401);
+  await testInfo.attach('m3-export-stage-evidence', { body: JSON.stringify({ matched, otherStage, otherDate,
+    verified, records_unchanged: true }), contentType: 'application/json' });
 });

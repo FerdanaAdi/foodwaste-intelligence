@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { installDomainFetch, prepareSession, sessionA } from './backend-auth-fixture';
@@ -170,5 +170,65 @@ describe('export dataset format contract', () => {
     await user.selectOptions(screen.getByLabelText('Dataset'), 'metadata');
     expect(screen.getByRole('heading', { name: /Ekspor JSON/ })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: 'Metadata (JSON)' })).toBeInTheDocument();
+  });
+});
+
+
+describe('M3-02 stage export filters and delivery invalidation', () => {
+  it.each(['events', 'measurements', 'metadata'] as const)('%s transmits the exact stage and other filters together', async dataset => {
+    const user = userEvent.setup();
+    const mock = vi.fn(async (_url: string) => binaryResponse(200, { 'Content-Type': dataset === 'metadata' ? 'application/json' : 'text/csv' }));
+    vi.stubGlobal('fetch', mock); mount();
+    await user.selectOptions(screen.getByLabelText('Dataset'), dataset);
+    await user.selectOptions(screen.getByLabelText('Jenis event'), 'at_risk_surplus');
+    await user.click(screen.getByLabelText('Kode tahap kegiatan')); await user.paste('preparation');
+    await user.click(screen.getByLabelText('Tanggal operasi dari')); await user.paste('2026-11-04');
+    await user.click(screen.getByLabelText('Tanggal operasi sampai')); await user.paste('2026-11-05');
+    await user.click(screen.getByRole('button', { name: 'Ambil ekspor dari server' }));
+    await screen.findByRole('button', { name: `Unduh fwi-${dataset}.${dataset === 'metadata' ? 'json' : 'csv'}` });
+    const query = new URL(String(mock.mock.calls[0]![0]), 'https://127.0.0.1:5173').searchParams;
+    expect(Object.fromEntries(query)).toEqual({ site_id: sessionA.sites[0].site_id, dataset,
+      event_type: 'at_risk_surplus', stage_code: 'preparation', operation_date_from: '2026-11-04', operation_date_to: '2026-11-05' });
+    expect(mock).toHaveBeenCalledTimes(1);
+  });
+  it('omits the stage parameter when the code input is empty', async () => {
+    const user = userEvent.setup(); const mock = vi.fn(async (_url: string) => binaryResponse()); vi.stubGlobal('fetch', mock); mount();
+    await user.click(screen.getByLabelText('Kode tahap kegiatan')); await user.paste('preparation');
+    await user.clear(screen.getByLabelText('Kode tahap kegiatan'));
+    await user.click(screen.getByRole('button', { name: 'Ambil ekspor dari server' }));
+    await screen.findByRole('button', { name: 'Unduh fwi-events.csv' });
+    expect(new URL(String(mock.mock.calls[0]![0]), 'https://127.0.0.1:5173').searchParams.has('stage_code')).toBe(false);
+  });
+  it.each(['Kode tahap kegiatan', 'Tanggal operasi dari', 'Tanggal operasi sampai', 'Jenis event', 'Dataset'])('editing %s removes the previous download without fetching automatically', async label => {
+    const user = userEvent.setup(); const mock = vi.fn(async (_url: string) => binaryResponse()); vi.stubGlobal('fetch', mock); mount();
+    await user.click(screen.getByRole('button', { name: 'Ambil ekspor dari server' }));
+    await screen.findByRole('button', { name: 'Unduh fwi-events.csv' });
+    if (label === 'Dataset') await user.selectOptions(screen.getByLabelText(label), 'metadata');
+    else if (label === 'Jenis event') await user.selectOptions(screen.getByLabelText(label), 'actual_loss_discard');
+    else { await user.click(screen.getByLabelText(label)); await user.paste(label === 'Kode tahap kegiatan' ? 'serving' : '2026-11-05'); }
+    expect(screen.queryByRole('button', { name: /Unduh/ })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Hasil ekspor')).not.toBeInTheDocument();
+    expect(mock).toHaveBeenCalledTimes(1);
+  });
+  it('disables every dataset/filter control during a pending request', async () => {
+    const user = userEvent.setup(); let resolve!: (r: Response) => void;
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(done => { resolve = done; }))); mount();
+    await user.click(screen.getByRole('button', { name: 'Ambil ekspor dari server' }));
+    const labels = ['Dataset', 'Jenis event', 'Kode tahap kegiatan', 'Tanggal operasi dari', 'Tanggal operasi sampai'];
+    for (const label of labels) expect(screen.getByLabelText(label)).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Menyiapkan ekspor…' })).toBeDisabled();
+    resolve(binaryResponse()); await screen.findByRole('button', { name: 'Unduh fwi-events.csv' });
+    for (const label of labels) expect(screen.getByLabelText(label)).toBeEnabled();
+  });
+  it.each(['logout', 'site'])('a late response after %s never reintroduces the old download', async transition => {
+    await prepareSession({ ...sessionA, sites: [...sessionA.sites, { site_id: siteB, permissions: ['event.read'] }] });
+    const user = userEvent.setup(); let resolve!: (r: Response) => void;
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(done => { resolve = done; }))); mount();
+    await user.click(screen.getByRole('button', { name: 'Ambil ekspor dari server' }));
+    act(() => { if (transition === 'logout') invalidateAuth(); else selectSite(siteB); });
+    await act(async () => { resolve(binaryResponse()); });
+    expect(screen.queryByRole('button', { name: /Unduh/ })).not.toBeInTheDocument();
+    if (transition === 'logout') expect(screen.getByRole('heading', { name: 'Masuk ke FWI' })).toBeInTheDocument();
+    else expect(authSnapshot().site).toBe(siteB);
   });
 });

@@ -15,6 +15,12 @@ export default function BackendExportLivePage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  function updateFilter(key: keyof ExportFilters, value: string) {
+    if (busy) return;
+    setFilters(previous => ({ ...previous, [key]: value }));
+    setDelivery(null); setError(null);
+  }
+
   if (!permits('event.read')) return <AccessDeniedState reason="Peran pada site aktif tidak memiliki izin membaca untuk ekspor." />;
 
   async function run() {
@@ -32,22 +38,25 @@ export default function BackendExportLivePage() {
     </header>
 
     <section className="rounded border bg-white p-4 space-y-3">
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <fieldset disabled={busy} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <label className="block">Dataset
-          <select className={field} disabled={busy} value={dataset} onChange={e => { setDataset(e.target.value as ExportDataset); setDelivery(null); }}>
+          <select className={field} disabled={busy} value={dataset} onChange={e => { if (busy) return; setDataset(e.target.value as ExportDataset); setDelivery(null); setError(null); }}>
             {EXPORT_DATASETS.map(v => <option key={v} value={v}>{v === "metadata" ? "Metadata (JSON)" : v === "events" ? "Kejadian (CSV)" : "Pengukuran (CSV)"}</option>)}
           </select>
         </label>
         <label className="block">Jenis event
-          <select className={field} value={filters.event_type ?? ""} onChange={e => setFilters(f => ({ ...f, event_type: e.target.value }))}>
+          <select className={field} value={filters.event_type ?? ""} onChange={e => updateFilter('event_type', e.target.value)}>
             <option value="">— Semua —</option>
             <option value="at_risk_surplus">at_risk_surplus</option>
             <option value="actual_loss_discard">actual_loss_discard</option>
           </select>
         </label>
-        <label className="block">Tanggal operasi dari<input className={field} value={filters.operation_date_from ?? ""} onChange={e => setFilters(f => ({ ...f, operation_date_from: e.target.value }))} placeholder="YYYY-MM-DD" /></label>
-        <label className="block">Tanggal operasi sampai<input className={field} value={filters.operation_date_to ?? ""} onChange={e => setFilters(f => ({ ...f, operation_date_to: e.target.value }))} placeholder="YYYY-MM-DD" /></label>
-      </div>
+        <label className="block">Kode tahap kegiatan<input className={field} value={filters.stage_code ?? ""}
+          aria-describedby="export-stage-help" onChange={e => updateFilter('stage_code', e.target.value)} /></label>
+        <label className="block">Tanggal operasi dari<input className={field} value={filters.operation_date_from ?? ""} onChange={e => updateFilter('operation_date_from', e.target.value)} placeholder="YYYY-MM-DD" /></label>
+        <label className="block">Tanggal operasi sampai<input className={field} value={filters.operation_date_to ?? ""} onChange={e => updateFilter('operation_date_to', e.target.value)} placeholder="YYYY-MM-DD" /></label>
+      </fieldset>
+      <p id="export-stage-help" className="text-sm">Gunakan kode tahap pada catatan yang ada; kosongkan untuk semua tahap. Tidak ada daftar tahap baku baru.</p>
       <button type="button" onClick={() => void run()} disabled={busy} className="rounded bg-sky-700 px-4 py-2 text-white disabled:opacity-50">
         {busy ? "Menyiapkan ekspor…" : "Ambil ekspor dari server"}
       </button>
