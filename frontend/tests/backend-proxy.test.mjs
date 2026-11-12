@@ -65,6 +65,7 @@ test("W-25: only the exact scoped routes and methods forward, and unrelated secr
     const addedReads = [
       `/demo/v0.1/events?site_id=${site}&page=1&page_size=20`,
       `/demo/v0.1/data-quality?site_id=${site}`,
+      `/demo/v0.1/data-quality?site_id=${site}&stage_code=preparation&operation_date_from=2026-11-04&operation_date_to=2026-11-05`,
       "/demo/v0.1/master/namespaces",
       "/demo/v0.1/master/references?namespace=stage&include_inactive=true",
       "/demo/v0.1/master/references/history?namespace=stage&code=synthetic",
@@ -78,10 +79,12 @@ test("W-25: only the exact scoped routes and methods forward, and unrelated secr
     }
     // New read routes do not grant arbitrary query keys or master/export writes.
     for (const url of ["/demo/v0.1/events?unexpected=1", "/demo/v0.1/export?unexpected=1",
-      "/demo/v0.1/evidence?site_id=unapproved", "/demo/v0.1/reviews?unexpected=1"]) {
+      "/demo/v0.1/evidence?site_id=unapproved", "/demo/v0.1/reviews?unexpected=1",
+      `/demo/v0.1/data-quality?site_id=${site}&occurred_from=2026-11-04`,
+      `/demo/v0.1/data-quality?site_id=${site}&stage=preparation`]) {
       assert.equal((await fetch(origin + url, { headers: jsonHeaders })).status, 404);
     }
-    for (const url of ["/demo/v0.1/master/references", "/demo/v0.1/export"]) {
+    for (const url of ["/demo/v0.1/master/references", "/demo/v0.1/export", "/demo/v0.1/data-quality"]) {
       assert.equal((await fetch(origin + url, { method: "POST", headers: jsonHeaders, body: "{}" })).status, 404);
     }
     for (const method of ["PUT", "PATCH", "DELETE", "OPTIONS"]) {
@@ -163,10 +166,14 @@ test('combined P0/P1/P2 allowlists preserve TLS, query and method boundaries', a
   const site = '22222222-2222-4222-8222-222222222222';
   for (const path of [`/p1/v0.1/trends?site_id=${site}&date_from=2026-11-01&date_to=2026-11-09`,
     `/p1/v0.1/receipts?site_id=${site}`, '/p2/v0.1/recommendations/rules', '/p2/v0.1/kpi',
-    `/demo/v0.1/events?site_id=${site}`]) {
+    `/demo/v0.1/events?site_id=${site}`,
+    `/demo/v0.1/data-quality?site_id=${site}&stage_code=preparation&operation_date_from=2026-11-04&operation_date_to=2026-11-05`]) {
     assert.equal(new RegExp(key).test(path), true);
     assert.equal(probe(path), 503); // allowed route still cannot bypass TLS
   }
+  assert.equal(probe('/demo/v0.1/data-quality?unexpected=1'), 404);
+  assert.equal(probe(`/demo/v0.1/data-quality?site_id=${site}&stage=preparation`), 404);
+  assert.equal(probe('/demo/v0.1/data-quality', 'POST'), 404);
   assert.equal(probe('/p1/v0.1/receipts', 'POST'), 503);
   assert.equal(probe('/p1/v0.1/receipts?unexpected=1'), 404);
   assert.equal(probe('/p2/v0.1/recommendations/rules?unexpected=1'), 404);

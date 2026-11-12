@@ -73,14 +73,14 @@ def read_event(event_id: UUID, request: Request):
 
 @router.get('/data-quality', response_model=DataQualityOutput)
 def read_data_quality(request: Request):
-    unknown = set(request.query_params) - {'site_id'}
+    unknown = set(request.query_params) - {'site_id', 'stage_code', 'operation_date_from', 'operation_date_to'}
     if unknown:
         raise HTTPException(422, f'unsupported data-quality filter(s): {", ".join(sorted(unknown))}')
     try:
         site_id = UUID(request.query_params.get('site_id', ''))
     except ValueError as exc:
         raise HTTPException(422, 'site_id must be a UUID') from exc
-    return invoke(request, demo.read_data_quality, site_id)
+    return invoke(request, demo.read_data_quality, site_id, dict(request.query_params))
 
 
 EVIDENCE_QUERY_KEYS = frozenset({'target_kind', 'target_id'})

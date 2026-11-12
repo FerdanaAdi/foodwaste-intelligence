@@ -104,11 +104,23 @@ function asInt(value: unknown): number {
   if (typeof value !== "number" || !Number.isInteger(value) || value < 0) throw new Error("Ringkasan mutu data tidak sesuai kontrak.");
   return value;
 }
-/** Count-only live summary; drill-down identities reconcile with the ledger. */
-export async function readBackendDataQuality(signal: AbortSignal): Promise<DataQualityLive> {
+export type DataQualityFilters = Pick<LedgerFilters, 'stage_code' | 'operation_date_from' | 'operation_date_to'>;
+export function validateDataQualityFilters(filters: DataQualityFilters): void {
+  for (const key of ['operation_date_from', 'operation_date_to'] as const) {
+    if (filters[key] && !isISODate(filters[key])) throw new Error('Tanggal kegiatan dapur harus berformat YYYY-MM-DD dan valid.');
+  }
+  if (filters.operation_date_from && filters.operation_date_to && filters.operation_date_from > filters.operation_date_to)
+    throw new Error('Tanggal mulai tidak boleh setelah tanggal sampai.');
+}
+/** Count-only live summary; kitchen operation dates use the ledger date semantics. */
+export async function readBackendDataQuality(signal: AbortSignal, filters: DataQualityFilters = {}): Promise<DataQualityLive> {
   const site = authSnapshot().site;
   if (!isUUID(site)) throw new AuthFailure(403, 'Site aktif tidak valid.');
-  const value = await get(`/demo/v0.1/data-quality?site_id=${site}`, signal) as Record<string, unknown>;
+  validateDataQualityFilters(filters);
+  const params = new URLSearchParams({ site_id: site });
+  for (const key of ['stage_code', 'operation_date_from', 'operation_date_to'] as const)
+    if (filters[key]) params.set(key, filters[key]);
+  const value = await get(`/demo/v0.1/data-quality?${params.toString()}`, signal) as Record<string, unknown>;
   if (typeof value !== "object" || value === null || typeof value.summary !== "object" || value.summary === null || !Array.isArray(value.records))
     throw new Error("Ringkasan mutu data tidak sesuai kontrak.");
   const summary = value.summary as Record<string, unknown>;

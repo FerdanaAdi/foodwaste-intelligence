@@ -112,7 +112,7 @@ EVENT_TYPE_FILTERS = {'at_risk_surplus', 'actual_loss_discard'}
 MAX_PAGE_SIZE = 100
 
 
-def read_data_quality(factory, site_id: UUID, access=None, intent=None):
+def read_data_quality(factory, site_id: UUID, query=None, access=None, intent=None):
     """Authorized count-only data-quality view (FR-007) over persistent site rows.
 
     Site scope is re-checked server-side; drill-down returns stable identities
@@ -122,7 +122,29 @@ def read_data_quality(factory, site_id: UUID, access=None, intent=None):
     with unit(factory, access) as session:
         if access:
             security.permit(access, site_id, 'event.read', conceal=True)
-        events = session.scalars(select(WasteEvent).where(WasteEvent.site_id == site_id)
+        # Kitchen operation dates are independent source dates, never occurred_at filters.
+        # Inclusive bounds match the ledger; SQL excludes NULL dates only when bounded.
+        from datetime import date as date_type
+        query = query or {}
+        criteria = [WasteEvent.site_id == site_id]
+        if query.get('stage_code') is not None:
+            criteria.append(WasteEvent.stage_code == query['stage_code'])
+        bounds = {}
+        for key in ('operation_date_from', 'operation_date_to'):
+            if query.get(key) is not None:
+                try:
+                    value = date_type.fromisoformat(query[key])
+                    if value.isoformat() != query[key]:
+                        raise ValueError('expected YYYY-MM-DD')
+                except (TypeError, ValueError) as exc:
+                    raise ValueError(f'{key} must be an ISO date (YYYY-MM-DD)') from exc
+                bounds[key] = value
+                criteria.append(WasteEvent.operation_date >= value if key.endswith('from')
+                                else WasteEvent.operation_date <= value)
+        if ('operation_date_from' in bounds and 'operation_date_to' in bounds
+                and bounds['operation_date_from'] > bounds['operation_date_to']):
+            raise ValueError('operation_date_from must not be after operation_date_to')
+        events = session.scalars(select(WasteEvent).where(*criteria)
                                  .order_by(WasteEvent.occurred_at.desc(), WasteEvent.event_id.asc()))
         event_rows = [snapshot(record) for record in events]
         event_ids = [row['event_id'] for row in event_rows]
