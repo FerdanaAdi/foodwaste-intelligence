@@ -143,11 +143,19 @@ def serve():
             config.attributes['connection'] = connection
             command.upgrade(config, 'head')
             revision = connection.scalar(text('SELECT version_num FROM alembic_version'))
-            if revision != 'int_p1_0006':
+            if revision != 'auth_0007':
                 raise RuntimeError('unexpected migration baseline')
             identity = dict(connection.execute(text('SELECT current_user AS role,current_database() AS database,version() AS version')).mappings().one())
         seed_demo(factory)
         seed_security(factory, passwords)
+        admin_name = os.environ.get('FWI_BROWSER_MEMBERSHIP_ADMIN')
+        if admin_name:
+            # Explicit owned test fixture only; never application startup.
+            if admin_name != 'site_a_writer':
+                raise RuntimeError('unsupported synthetic browser admin')
+            from fwi.infrastructure.database.security_seed import seed_membership_administration
+            from fwi.infrastructure.database.demo_seed import SITE_ID
+            seed_membership_administration(factory, admin_name, SITE_ID)
         # Explicit owned-browser-fixture seed; never application startup.
         from fwi.infrastructure.database.p2_seed import seed_kpi_registry
         seed_kpi_registry(factory)
@@ -172,7 +180,7 @@ def serve():
             finally:
                 if scope['type'] == 'http' and scope['method'] == 'POST':
                     operations.append({'path': scope['path'], 'status': status})
-                if scope['type'] == 'http' and scope['method'] == 'POST' and scope['path'].startswith('/demo/v0.1/'):
+                if scope['type'] == 'http' and scope['method'] == 'POST' and (scope['path'].startswith('/demo/v0.1/') or scope['path'] == '/auth/memberships'):
                     posts.append({'path': scope['path'], 'status': status})
 
         server_config = local_server_config(observed_app, port=8000,
@@ -199,7 +207,12 @@ def serve():
                     intents = [dict(r) for r in session.execute(select(WriteIntent.intent_id,
                         WriteIntent.principal_id, WriteIntent.site_id, WriteIntent.kind,
                         WriteIntent.state, WriteIntent.event_id, WriteIntent.result_id)).mappings()]
-                emit({'data': data, 'counts': {k: len(v) for k, v in data.items()},
+                    from fwi.infrastructure.database.models import MembershipChange
+                    membership_changes = [dict(r) for r in session.execute(select(
+                        MembershipChange.audit_id, MembershipChange.principal_id, MembershipChange.site_id,
+                        MembershipChange.old_role, MembershipChange.old_active, MembershipChange.new_role,
+                        MembershipChange.new_active, MembershipChange.reason, MembershipChange.recorded_at)).mappings()]
+                emit({'membership_changes': membership_changes, 'data': data, 'counts': {k: len(v) for k, v in data.items()},
                       'sha256': hashlib.sha256(json.dumps(data, sort_keys=True, default=str).encode()).hexdigest(), 'posts': list(posts),
                       'auth_http': list(auth_http), 'operations': list(operations), 'intents': intents})
             elif request['command'] == 'stop':

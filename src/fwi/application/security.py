@@ -97,10 +97,11 @@ class Access:
     principal: Principal
     login_session: AuthSession
     intent: WriteIntent | None = None
+    locked_principal_ids: frozenset = frozenset()
 
 
 @contextmanager
-def protected(factory, secret, csrf=None, write=False, activity=True):
+def protected(factory, secret, csrf=None, write=False, activity=True, lock_principal_ids=()):
     if not secret or len(secret) > 128:
         raise Denied(401)
     with factory() as session, session.begin():
@@ -108,7 +109,13 @@ def protected(factory, secret, csrf=None, write=False, activity=True):
         candidate = session.scalar(select(AuthSession.principal_id).where(AuthSession.secret_hash == digest(secret)))
         if candidate is None:
             raise Denied(401)
-        principal = session.scalar(select(Principal).where(Principal.principal_id == candidate).with_for_update())
+        # Administrative mutations lock actor and target in one global UUID order.
+        # Ordinary protected writes use the same protocol with one principal.
+        principals = {}
+        for identifier in sorted({candidate, *lock_principal_ids}, key=lambda value: value.int):
+            principals[identifier] = session.scalar(select(Principal).where(
+                Principal.principal_id == identifier).with_for_update())
+        principal = principals[candidate]
         login_session = session.scalar(select(AuthSession).where(AuthSession.secret_hash == digest(secret)).with_for_update())
         instant = now()  # after lock acquisition, not before a potentially long wait
         if (not principal or not principal.enabled or not login_session or login_session.revoked
@@ -119,7 +126,7 @@ def protected(factory, secret, csrf=None, write=False, activity=True):
             raise Denied(403)
         if activity:
             login_session.last_seen_at = instant
-        yield Access(session, principal, login_session)
+        yield Access(session, principal, login_session, locked_principal_ids=frozenset(principals))
 
 
 def permit(access, site_id, action, conceal=False):

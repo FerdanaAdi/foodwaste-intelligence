@@ -245,6 +245,9 @@ jobs:
           }
           JS
       - name: Linux Chromium Browser E2E (no retries, one worker)
+        env:
+          # Explicit supported synthetic persona; this step's UUID test schemas only.
+          FWI_BROWSER_MEMBERSHIP_ADMIN: site_a_writer
         run: |
           set -euo pipefail
           export HOME="$FWI_CI_TLS_DIR/home-trusted"

@@ -36,3 +36,34 @@ def seed_security(factory, passwords):
             session.flush()
             security_audit(session, None, 'auth_principals', principal.principal_id, 'seeded', 'explicit synthetic seed')
             security_audit(session, None, 'auth_memberships', member.membership_id, 'seeded', 'explicit synthetic seed')
+
+
+def seed_membership_administration(factory, username, site_id):
+    """Trusted explicit bootstrap only; never called by startup or a public API.
+
+    Eligibility is exactly the previously approved PERSONAS site roster. A site
+    membership (or organization equality) alone does not prove eligibility.
+    No passwords/accounts are created and no revoked membership is reactivated.
+    """
+    from fwi.infrastructure.database.models import MembershipAdmin, MembershipEligibility
+    if username not in PERSONAS or PERSONAS[username][0] != site_id:
+        raise ValueError('bootstrap requires an approved synthetic persona at its exact site')
+    with factory() as session, session.begin():
+        principal = session.scalar(select(Principal).where(Principal.username == username).with_for_update())
+        if principal is None or not principal.enabled or session.get(Site, site_id) is None:
+            raise ValueError('seed existing enabled synthetic principals and sites first')
+        for name, (allowed_site, _) in PERSONAS.items():
+            if allowed_site != site_id:
+                continue
+            target = session.scalar(select(Principal).where(Principal.username == name))
+            if target is None:
+                raise ValueError('approved synthetic roster incomplete')
+            key = (target.principal_id, site_id)
+            if session.get(MembershipEligibility, key) is None:
+                session.add(MembershipEligibility(principal_id=key[0], site_id=key[1]))
+                security_audit(session, None, 'auth_membership_eligibility', target.principal_id,
+                    'seeded', 'approved synthetic PERSONAS site roster: ' + str(site_id))
+        if session.get(MembershipAdmin, (principal.principal_id, site_id)) is None:
+            session.add(MembershipAdmin(principal_id=principal.principal_id, site_id=site_id))
+            security_audit(session, None, 'auth_membership_admins', principal.principal_id,
+                'seeded', 'explicit trusted synthetic site admin bootstrap: ' + str(site_id))

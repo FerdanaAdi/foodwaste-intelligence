@@ -118,11 +118,21 @@ def test_denied_403_404_and_validation_do_not_extend_idle_activity(database):
         app.state.session_factory.kw['bind'].dispose()
 
 
+def verify_owned_schema(connection, engine, schema):
+    verify_test_target(connection, schema)
+    identity = connection.execute(text(
+        "SELECT oid, nspowner = (SELECT oid FROM pg_roles WHERE rolname=current_user) AS owned "
+        "FROM pg_namespace WHERE nspname=:schema"), {'schema': schema}).mappings().one()
+    assert identity['owned'] and identity['oid'] == engine._fwi_created_schema_oid
+    connection.execute(text(f'SET LOCAL search_path TO "{schema}"'))
+    assert connection.scalar(text('SHOW search_path')) == schema
+    assert connection.scalar(text('SELECT current_schema()')) == schema
+
+
 @contextmanager
 def schema_connection(engine, schema):
     with engine.begin() as connection:
-        verify_test_target(connection, schema)
-        connection.execute(text(f'SET LOCAL search_path TO "{schema}"'))
+        verify_owned_schema(connection, engine, schema)
         yield connection
 
 
@@ -147,17 +157,24 @@ def empty_auth_schema():
             connection.execute(text(f'CREATE SCHEMA "{schema}"'))
             created_oid = connection.scalar(text('SELECT oid FROM pg_namespace WHERE nspname=:s'), {'s': schema})
         oid = created_oid
+        engine._fwi_created_schema_oid = oid
         with schema_connection(engine, schema) as connection:
             config = config_for(connection)
             command.upgrade(config, 'demo_0001')
             audit_id = uuid4()
             connection.execute(text("INSERT INTO audit_events(audit_id,entity_type,entity_id,action,actor,recorded_at) VALUES(:id,'fixture',:id,'created','synthetic-demo-actor',now())"), {'id': audit_id})
-            command.upgrade(config, 'head')
+            # Historical rollback tests must stop before forward-only auth_0007.
+            # This merge revision preserves both existing P0/P1 branches.
+            command.upgrade(config, 'int_p1_0006')
+            assert connection.scalar(text('SELECT version_num FROM alembic_version')) == 'int_p1_0006'
         yield engine, schema
     finally:
         if oid is not None:
             with engine.begin() as connection:
                 drop_created_schema(connection, schema, oid)
+            with engine.connect() as connection:
+                verify_test_target(connection, schema)
+                assert connection.scalar(text('SELECT oid FROM pg_namespace WHERE nspname=:s'), {'s': schema}) is None
         engine.dispose()
 
 
@@ -249,8 +266,7 @@ def test_downgrade_lock_timeout_has_no_partial_effects(empty_auth_schema):
         connection = engine.connect()
         transaction = connection.begin()
         try:
-            verify_test_target(connection, schema)
-            connection.execute(text(f'SET LOCAL search_path TO "{schema}"'))
+            verify_owned_schema(connection, engine, schema)
             connection.execute(INSERT_PREAUTH, PARAMS)
             future = pool.submit(downgrade)
             observe_lock(engine, pids.get(timeout=4))
@@ -282,3 +298,37 @@ def test_downgrade_failure_after_real_drop_rolls_back_entire_schema(empty_auth_s
     assert shape(engine, schema) == before
     with schema_connection(engine, schema) as connection:
         assert connection.scalar(text('SELECT actor FROM audit_events')) == 'synthetic-demo-actor'
+
+
+@pytest.mark.parametrize('with_security_evidence', [False, True])
+def test_auth_0007_downgrade_refuses_without_schema_or_data_changes(empty_auth_schema, with_security_evidence):
+    engine, schema = empty_auth_schema
+    with schema_connection(engine, schema) as connection:
+        command.upgrade(config_for(connection), 'head')
+        assert connection.scalar(text('SELECT version_num FROM alembic_version')) == 'auth_0007'
+        if with_security_evidence:
+            connection.execute(INSERT_PREAUTH, PARAMS)
+
+    def snapshot():
+        with schema_connection(engine, schema) as connection:
+            names = connection.scalars(text(
+                'SELECT table_name FROM information_schema.tables '
+                "WHERE table_schema=:s AND table_type='BASE TABLE' ORDER BY table_name"), {'s': schema}).all()
+            # Internal in-memory comparison only, never emit verifiers or data to logs.
+            data = {name: connection.execute(text(f'SELECT * FROM "{name}"')).all() for name in names}
+            return data, shape(engine, schema)
+
+    before = snapshot()
+    ddl = []
+    def observe_ddl(conn, cursor, statement, parameters, context, executemany):
+        if statement.lstrip().upper().startswith(('DROP ', 'ALTER ', 'CREATE ', 'TRUNCATE ')):
+            ddl.append(statement.split()[0])
+    event.listen(engine, 'before_cursor_execute', observe_ddl)
+    try:
+        with pytest.raises(RuntimeError, match='membership security evidence/history must not be downgraded'):
+            with schema_connection(engine, schema) as connection:
+                command.downgrade(config_for(connection), 'int_p1_0006')
+    finally:
+        event.remove(engine, 'before_cursor_execute', observe_ddl)
+    assert ddl == []
+    assert snapshot() == before

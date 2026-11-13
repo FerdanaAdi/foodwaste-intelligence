@@ -33,7 +33,7 @@ const KNOWN_PERMISSIONS = ['event.create','event.read','measurement.create','mea
   'p1.create','receipt.create','receipt.read','lot.create','lot.read','movement.create','movement.read',
   'menu.create','menu.read','recipe.create','recipe.read','batch.create','batch.read',
   'delivery.create','delivery.read','service.create','service.read','link.create','link.read',
-  'disposition.create','disposition.read','trends.read','kpi.read','costref.create','costref.read','alert.read','alert.ack'];
+  'disposition.create','disposition.read','trends.read','kpi.read','costref.create','costref.read','alert.read','alert.ack','membership.manage'];
 
 export function parseSession(raw: unknown, response: Response): Session {
   const value = raw as Session;
