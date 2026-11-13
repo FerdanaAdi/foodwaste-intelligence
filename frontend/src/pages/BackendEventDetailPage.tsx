@@ -52,6 +52,7 @@ function BackendDetail({ id }: { id: string }) {
     {event.kind === "ready" && <>
       <EventContext event={event.value} count={measurements.kind === "ready" ? measurements.value.length : undefined} />
       <ReviewLink eventId={event.value.event_id} />
+      <Link className="ux-action" to={`/backend-operations?event=${event.value.event_id}`}>Buka disposisi kejadian ini</Link>
       <section aria-label="Klasifikasi pangan" className="rounded border p-3">
         <h2>Klasifikasi terpisah</h2>
         <p>Lingkup regulatori: {event.value.regulatory_scope_status === 'pending_assessment' ? 'Menunggu penilaian' : 'Belum dicatat'}</p>

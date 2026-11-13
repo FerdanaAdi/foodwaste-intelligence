@@ -1,3 +1,4 @@
+import { MemoryRouter } from "react-router";
 /** Candidate P1 operations page: display states, HELD KPI value-freeness, blocked mixed ratio. */
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -102,7 +103,7 @@ beforeEach(() => {
 });
 
 function renderPage() {
-  return render(<BackendOperationsPage />);
+  return render(<MemoryRouter><BackendOperationsPage /></MemoryRouter>);
 }
 
 describe("BackendOperationsPage (P1 candidate)", () => {

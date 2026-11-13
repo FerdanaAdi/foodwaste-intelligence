@@ -12,7 +12,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from types import SimpleNamespace
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 
 from fwi.application import security
 from fwi.domain import aggregation as aggregation_domain
@@ -537,10 +537,34 @@ def read_lineage(factory, object_type, object_id, access=None, intent=None):
         record = _link_object(session, object_type, object_id)
         if access:
             security.permit(access, record.site_id, 'link.read', conceal=True)
-        links = session.scalars(select(P1MaterialFlowLink).where(
+        query = select(P1MaterialFlowLink).where(
             ((P1MaterialFlowLink.source_type == object_type) & (P1MaterialFlowLink.source_id == object_id))
-            | ((P1MaterialFlowLink.target_type == object_type) & (P1MaterialFlowLink.target_id == object_id)))
-            .order_by(P1MaterialFlowLink.recorded_at, P1MaterialFlowLink.link_id).limit(_BOUND)).all()
+            | ((P1MaterialFlowLink.target_type == object_type) & (P1MaterialFlowLink.target_id == object_id))
+        )
+        if access:
+            memberships = session.scalars(select(Membership).where(
+                Membership.principal_id == access.principal.principal_id,
+                Membership.active.is_(True),
+            ).order_by(Membership.site_id).with_for_update()).all()
+            readable_sites = [member.site_id for member in memberships
+                              if 'link.read' in security.PERMISSIONS.get(member.role, ())]
+            # Filter both endpoints before limiting or counting edges. Historical
+            # links survive revocation, but their foreign IDs and notes stay private.
+            for endpoint_type, endpoint_id in (
+                (P1MaterialFlowLink.source_type, P1MaterialFlowLink.source_id),
+                (P1MaterialFlowLink.target_type, P1MaterialFlowLink.target_id),
+            ):
+                query = query.where(or_(*[
+                    and_(endpoint_type == kind, select(model.site_id).where(
+                        next(iter(model.__table__.primary_key.columns)) == endpoint_id,
+                        model.site_id.in_(readable_sites),
+                        model.organization_id == record.organization_id,
+                    ).exists())
+                    for kind, model in _LINK_MODEL_MAP.items()
+                ]))
+        links = session.scalars(query.order_by(
+            P1MaterialFlowLink.recorded_at, P1MaterialFlowLink.link_id,
+        ).limit(_BOUND)).all()
         return {
             'object_type': object_type, 'object_id': object_id,
             'links': [snapshot(link) for link in links],

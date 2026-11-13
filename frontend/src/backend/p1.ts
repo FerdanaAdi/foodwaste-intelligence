@@ -626,6 +626,10 @@ export function readBatch(batchId: string, signal?: AbortSignal): Promise<BatchD
   return readJson(`/p1/v0.1/batches/${encodeURIComponent(batchId)}`, parseBatchDetail, signal);
 }
 
+export function readDelivery(deliveryId: string, signal?: AbortSignal): Promise<Delivery> {
+  return readJson(`/p1/v0.1/deliveries/${encodeURIComponent(deliveryId)}`, parseDelivery, signal);
+}
+
 export async function createBackendDelivery(input: {
   to_site_id: string; dispatch_quantity: string; mass_basis: string; dispatched_at: string,
 }): Promise<WriteResult<Delivery>> {

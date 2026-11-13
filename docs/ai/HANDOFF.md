@@ -1,3 +1,10 @@
+## M4 operational flow
+
+- Baseline `dbea4f681ab61dbe4deefa46be0ff0e2b0bd0323`. Browser fixture follows receipt, lot, movement, recipe, batch, delivery, destination receipt/service, one event, two measurements, lineage and disposition. Delivery selection and the event-detail link carry record IDs; the advanced lineage editor still takes typed IDs.
+- Lineage checks both endpoints against current site permissions before returning links or counting events. Inbound/outbound revocation regressions preserve the stored edge and conceal its IDs, note and counts. Codex Akun 2 reviewed the security diff read-only and found no material issue.
+- PostgreSQL targeted 29 PASS. Chrome HTTPS journey 1 PASS and proxy 4 PASS. Test schema and TLS cleanup verified. An earlier assertion expecting the form to stay disabled after the server confirmed a committed intent was corrected to verify no replay in the actual server POST history.
+- Next M5: verify count-based quality indicators and scoped alert recommendations against the accepted source. Cost allocation, effective measurement and numerical correction remain OPEN. OP-08, FI-02 and NI-03 remain HELD. M6 synthetic acceptance and Owner UAT remain pending.
+
 ## M3–M6 continuation — synthetic engineering candidate, 2026-11-13
 
 - Main baseline `2ef5a2da21340ddf797b57e11f4eaa93b7caa493`. M1/M2 DONE. M3–M5 IN PROGRESS. M6 PENDING.
