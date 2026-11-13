@@ -1,6 +1,7 @@
 """AC-14: source-backed independent axes; no legal verdict or food-safety inference."""
 import csv,io
 from datetime import datetime
+from sqlalchemy.engine import make_url
 from uuid import UUID,uuid4
 import pytest
 from sqlalchemy import select,func
@@ -18,7 +19,13 @@ def payload(**kwargs):
 
 
 @pytest.mark.parametrize('edibility',['edible','inedible','mixed','unknown'])
-def test_classifications_persist_independently_and_export_source(database,edibility):
+def test_classifications_persist_independently_and_export_source(database, edibility, monkeypatch):
+    # PostgreSQL may return a different offset than the submitted ISO timestamp.
+    # Set UTC only on this test app's connections, retaining the owned search_path.
+    import os
+    url = make_url(os.environ['FWI_DATABASE_URL'])
+    options = url.query['options'] + ' -cTimeZone=UTC'
+    monkeypatch.setenv('FWI_DATABASE_URL', url.update_query_dict({'options': options}).render_as_string(hide_password=False))
     app=create_app()
     try:
         with TestClient(app) as client:
@@ -33,8 +40,13 @@ def test_classifications_persist_independently_and_export_source(database,edibil
                 assert client.post(f'/demo/v0.1/events/{identifier}/measurements',json=values).status_code==201
             before=counts(database)
             read=client.get('/demo/v0.1/events/'+identifier).json()
-            assert datetime.fromisoformat(read['recorded_at'])==datetime.fromisoformat(event['recorded_at'])
-            assert {k:v for k,v in read.items() if k!='recorded_at'}=={k:v for k,v in event.items() if k!='recorded_at'}
+            timestamp_fields = {'occurred_at', 'recorded_at'}
+            for key in timestamp_fields:
+                assert datetime.fromisoformat(read[key]) == datetime.fromisoformat(event[key])
+            assert datetime.fromisoformat(read['occurred_at']) == datetime.fromisoformat(payload()['occurred_at'])
+            assert {k: v for k, v in read.items() if k not in timestamp_fields} == {
+                k: v for k, v in event.items() if k not in timestamp_fields
+            }
             export=client.get('/demo/v0.1/export',params={'site_id':str(SITE_ID),'dataset':'events'})
             assert export.status_code==200
             row=list(csv.DictReader(io.StringIO(export.content.decode('utf-8-sig'))))[0]
