@@ -48,6 +48,12 @@ def unit(factory, access):
 def create_event(factory, values, access=None, intent=None):
     if values['event_type'] not in {'at_risk_surplus', 'actual_loss_discard'}:
         raise ValueError('unsupported provisional demo event type')
+    if values.get('regulatory_scope_status') not in (None, 'pending_assessment'):
+        raise ValueError('unsupported regulatory classification; legal vocabulary remains OPEN')
+    if values.get('edibility_status') not in (None, 'edible', 'inedible', 'mixed', 'unknown'):
+        raise ValueError('unsupported source edibility classification')
+    if (values.get('regulatory_scope_status') or values.get('edibility_status')) and not str(values.get('classification_source') or '').strip():
+        raise ValueError('classification source is required')
     with unit(factory, access) as session:
         if access:
             security.permit(access, values['site_id'], 'event.create')

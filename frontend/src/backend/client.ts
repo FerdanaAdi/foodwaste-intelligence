@@ -152,9 +152,12 @@ export interface MasterReference {
   note: string | null; recorded_at: string;
 }
 /** Read-only master catalog: provisional namespaces + latest visible versions. */
-export async function readBackendMaster(signal: AbortSignal): Promise<{ namespaces: MasterNamespace[]; references: MasterReference[] }> {
+export async function readBackendMaster(signal: AbortSignal, filters: { namespace?: string; includeInactive?: boolean } = {}): Promise<{ namespaces: MasterNamespace[]; references: MasterReference[] }> {
   const namespacesValue = await get('/demo/v0.1/master/namespaces', signal);
-  const referencesValue = await get('/demo/v0.1/master/references', signal);
+  const params = new URLSearchParams();
+  if (filters.namespace) params.set('namespace', filters.namespace);
+  if (filters.includeInactive) params.set('include_inactive', 'true');
+  const referencesValue = await get('/demo/v0.1/master/references' + (params.size ? '?' + params.toString() : ''), signal);
   if (!Array.isArray(namespacesValue) || !Array.isArray(referencesValue))
     throw new Error("Katalog master tidak sesuai kontrak.");
   const namespaces = namespacesValue.map(item => {
@@ -173,4 +176,15 @@ export async function readBackendMaster(signal: AbortSignal): Promise<{ namespac
     return row as unknown as MasterReference;
   });
   return { namespaces, references };
+}
+
+export async function readBackendMasterHistory(namespace: string, code: string, signal: AbortSignal): Promise<MasterReference[]> {
+  const params = new URLSearchParams({namespace,code});
+  const value = await get('/demo/v0.1/master/references/history?' + params.toString(),signal) as {namespace?:string;code?:string;versions?:MasterReference[]};
+  if (!value || value.namespace !== namespace || value.code !== code || !Array.isArray(value.versions) ||
+      value.versions.some((r,i,rows) => !r || r.namespace !== namespace || r.code !== code || !isUUID(r.reference_id) ||
+        !Number.isInteger(r.version) || r.version < 1 || (i > 0 && rows[i-1].version >= r.version) ||
+        !['active','inactive'].includes(r.status) || typeof r.label !== 'string' || typeof r.changed_by !== 'string'))
+    throw new Error('Riwayat master tidak sesuai target/kontrak.');
+  return value.versions;
 }

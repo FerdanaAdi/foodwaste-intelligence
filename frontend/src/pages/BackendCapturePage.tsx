@@ -188,6 +188,16 @@ export default function BackendCapturePage() {
           <option value="">— Pilih jenis kejadian —</option><option value="at_risk_surplus">Surplus pangan berisiko</option><option value="actual_loss_discard">Pangan hilang atau dibuang</option>
         </select>
       </label>
+      <details className="space-y-2"><summary>Klasifikasi pangan (opsional, sumber wajib jika diisi)</summary>
+        <p>Lingkup regulatori terpisah dari bagian pangan. Ini bukan penilaian legal atau keamanan pangan.</p>
+        <label className="block">Lingkup regulatori<select className={field} value={eventInput.regulatory_scope_status ?? ""} onChange={e => setEventInput(v => ({...v, regulatory_scope_status:e.target.value as EventInput["regulatory_scope_status"]}))}>
+          <option value="">Belum dicatat</option><option value="pending_assessment">Menunggu penilaian</option></select></label>
+        <label className="block">Bagian pangan<select className={field} value={eventInput.edibility_status ?? ""} onChange={e => setEventInput(v => ({...v, edibility_status:e.target.value as EventInput["edibility_status"]}))}>
+          <option value="">Belum dicatat</option><option value="edible">Bagian dapat dimakan</option><option value="inedible">Bagian tidak dapat dimakan</option><option value="mixed">Campuran</option><option value="unknown">Belum diketahui</option></select></label>
+        <label className="block">Sumber klasifikasi<input className={field} value={eventInput.classification_source ?? ""} aria-describedby="classification-help" onChange={e => setEventInput(v => ({...v, classification_source:e.target.value}))} /></label>
+        <p id="classification-help">Catat referensi/prosedur dan asal penilaian. Tidak ada klasifikasi yang diisi otomatis.</p>
+        {fieldErrors.classification_source && <p role="alert">{fieldErrors.classification_source}</p>}
+      </details>
       <TimestampInput label="Tanggal dan waktu kejadian" value={eventInput.occurred_at} onChange={occurred_at => setEventInput(v => ({ ...v, occurred_at }))} error={fieldErrors.occurred_at} />
       {fieldErrors.event_type && <p id="capture-event-type-error" role="alert" className="text-red-700">{fieldErrors.event_type}</p>}
       <div className="grid gap-3 sm:grid-cols-3">

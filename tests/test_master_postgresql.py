@@ -78,14 +78,14 @@ def test_master_registry_is_structurally_global_shared(database):
     assert other.get('/demo/v0.1/master/references').status_code == 200
 
 
-def test_master_writes_are_not_authorized_for_anyone(database):
-    """DEC-P0-ACCESS-01: create/update/delete stay disabled; no mutation route."""
+def test_master_writes_require_explicit_namespace_authority(database):
+    """Operational writer is not an Owner-appointed global namespace administrator."""
     client = TestClient(create_app())
     assert client.post('/demo/v0.1/master/namespaces').status_code == 405  # route does not exist
     response = client.post('/demo/v0.1/master/references',
-                           json={'namespace': 'stage', 'code': 'x', 'version': 1,
-                                 'status': 'active', 'label': 'x'})
-    assert response.status_code == 405
+                           json={'namespace': 'stage', 'code': 'x', 'expected_version': 0,
+                                 'status': 'active', 'label': 'x', 'reason':'synthetic denied write'})
+    assert response.status_code == 403
 
 
 def test_duplicate_version_identity_is_rejected_by_database(database):

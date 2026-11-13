@@ -67,6 +67,8 @@ test("W-25: only the exact scoped routes and methods forward, and unrelated secr
       `/demo/v0.1/events?site_id=${site}&page=1&page_size=20`,
       `/demo/v0.1/data-quality?site_id=${site}`,
       `/demo/v0.1/data-quality?site_id=${site}&stage_code=preparation&operation_date_from=2026-11-04&operation_date_to=2026-11-05`,
+      "/demo/v0.1/administration",
+      `/demo/v0.1/evidence/${target}/content`,
       "/demo/v0.1/master/namespaces",
       "/demo/v0.1/master/references?namespace=stage&include_inactive=true",
       "/demo/v0.1/master/references/history?namespace=stage&code=synthetic",
@@ -75,17 +77,17 @@ test("W-25: only the exact scoped routes and methods forward, and unrelated secr
       `/demo/v0.1/export?site_id=${site}&dataset=events`,
     ];
     for (const url of addedReads) assert.equal((await fetch(origin + url, { headers: jsonHeaders })).status, 200);
-    for (const url of ["/demo/v0.1/evidence", "/demo/v0.1/reviews", "/auth/memberships"]) {
+    for (const url of ["/demo/v0.1/evidence", "/demo/v0.1/reviews", "/auth/memberships", "/demo/v0.1/master/references", `/demo/v0.1/reviews/${target}/approval`]) {
       assert.equal((await fetch(origin + url, { method: "POST", headers: jsonHeaders, body: "{}" })).status, 200);
     }
-    // New read routes do not grant arbitrary query keys or master/export writes.
+    // New read routes do not grant arbitrary query keys or namespace/export writes.
     for (const url of ["/auth/memberships?unexpected=1", "/demo/v0.1/events?unexpected=1", "/demo/v0.1/export?unexpected=1",
       "/demo/v0.1/evidence?site_id=unapproved", "/demo/v0.1/reviews?unexpected=1",
       `/demo/v0.1/data-quality?site_id=${site}&occurred_from=2026-11-04`,
       `/demo/v0.1/data-quality?site_id=${site}&stage=preparation`]) {
       assert.equal((await fetch(origin + url, { headers: jsonHeaders })).status, 404);
     }
-    for (const url of ["/demo/v0.1/master/references", "/demo/v0.1/export", "/demo/v0.1/data-quality"]) {
+    for (const url of ["/demo/v0.1/master/namespaces", "/demo/v0.1/export", "/demo/v0.1/data-quality"]) {
       assert.equal((await fetch(origin + url, { method: "POST", headers: jsonHeaders, body: "{}" })).status, 404);
     }
     for (const method of ["PUT", "PATCH", "DELETE", "OPTIONS"]) {
@@ -97,9 +99,9 @@ test("W-25: only the exact scoped routes and methods forward, and unrelated secr
     assert.equal((await fetch(origin + path, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).status, 404);
     assert.equal((await fetch(origin + "/demo/v0.1/events", { method: "POST", headers: { origin: 'https://127.0.0.1:5173' }, body: "{}" })).status, 415);
     assert.equal((await fetch(origin + "/demo/v0.1/events", { method: "POST", headers: { "content-type": "application/json", origin: "http://evil.example" }, body: "{}" })).status, 403);
-    assert.equal(received.length, 4 + addedReads.length + 3);
+    assert.equal(received.length, 4 + addedReads.length + 5);
     assert.ok(received.every(r => (!r.headers.cookie || r.headers.cookie === '__Host-fwi-session=synthetic-test-only') && !r.headers.authorization && !r.headers["proxy-authorization"]));
-    assert.deepEqual(received.map(r => r.method), ["GET", "GET", "POST", "POST", ...addedReads.map(() => "GET"), "POST", "POST", "POST"]);
+    assert.deepEqual(received.map(r => r.method), ["GET", "GET", "POST", "POST", ...addedReads.map(() => "GET"), "POST", "POST", "POST", "POST", "POST"]);
   } finally {
     if (vite) await vite.close();
     backend.closeAllConnections();

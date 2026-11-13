@@ -51,6 +51,7 @@ export default function BackendDistributionPage() {
     setBusy(false);
     if (result.kind === "saved") {
       setLastDelivery(result.value);
+      setService(v=>({...v,delivery_id:result.value.delivery_id}));
       setDelivery({ to_site_id: "", dispatch_quantity: "", mass_basis: "as_served", dispatched_at: "" });
       setDeliveryFeedback({ kind: "success", message: "Delivery tersimpan. Dispatch ≠ received dicatat terpisah." });
     } else setDeliveryFeedback({ kind: result.kind === "rejected" ? "error" : "unknown", message: result.message });

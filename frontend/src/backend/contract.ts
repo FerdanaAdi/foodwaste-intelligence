@@ -10,6 +10,9 @@ export interface BackendEvent {
   process_step?: string | null;
   /** Supplied independently by the operator; never derived from occurred_at. */
   operation_date?: string | null;
+  regulatory_scope_status?: "pending_assessment" | null;
+  edibility_status?: "edible" | "inedible" | "mixed" | "unknown" | null;
+  classification_source?: string | null;
   occurred_at: string;
   recorded_at: string;
 }
@@ -71,6 +74,11 @@ export function parseEvent(value: unknown, expectedId: string): BackendEvent {
   requireValue(record.event_id === expectedId);
   requireValue(record.event_type === "at_risk_surplus" || record.event_type === "actual_loss_discard");
   for (const key of ["stage_code", "process_step"] as const) optionalText(record[key]);
+  requireValue(record.regulatory_scope_status == null || record.regulatory_scope_status === 'pending_assessment');
+  requireValue(record.edibility_status == null || ['edible','inedible','mixed','unknown'].includes(String(record.edibility_status)));
+  optionalText(record.classification_source);
+  if (record.regulatory_scope_status != null || record.edibility_status != null)
+    requireValue(typeof record.classification_source === 'string' && !!record.classification_source.trim());
   optionalText(record.operation_date);
   if (record.operation_date != null) requireValue(isISODate(record.operation_date));
   requireValue(isAwareTimestamp(record.occurred_at) && isAwareTimestamp(record.recorded_at));

@@ -13,7 +13,7 @@ from fastapi.exceptions import RequestValidationError
 from sqlalchemy.exc import SQLAlchemyError
 
 from fwi import __version__
-from fwi.api.routes import auth, demo, health, p1, p2
+from fwi.api.routes import auth, demo, health, p1, p2, completion
 from fwi.application import security
 from fwi.infrastructure.database.session import (
     create_session_factory,
@@ -40,6 +40,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(auth.router)
     app.include_router(demo.router)
+    app.include_router(completion.router)
     app.include_router(p1.router)
     app.include_router(p2.router)
     @app.exception_handler(RequestValidationError)

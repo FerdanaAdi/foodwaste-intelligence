@@ -5,6 +5,7 @@ import { WRITE_TIMEOUT_MS } from './write';
 
 export type ReviewTargetKind = 'event' | 'measurement';
 export interface ReviewProposal {
+  proposal_version?: number; approval_revision?: number; approval_status?: "unreviewed" | "approved_prototype"; applied?: false;
   correction_record_id: string; target_kind: ReviewTargetKind; target_id: string;
   original_values: Record<string, unknown>; proposed_values: Record<string, unknown>;
   actor_id: string; recorded_at: string; reason: string; source: string;

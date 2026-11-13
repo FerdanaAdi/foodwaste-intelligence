@@ -23,7 +23,17 @@ class EventInput(BaseModel):
     # operation_date is supplied independently; the server never derives it from
     # occurred_at/recorded_at (PRD EVT-004; timezone policy remains OPEN OD-008).
     operation_date: date | None = None
+    # Only the PRD pending-assessment state is supported; no legal verdict inferred.
+    regulatory_scope_status: Literal['pending_assessment'] | None = None
+    edibility_status: Literal['edible', 'inedible', 'mixed', 'unknown'] | None = None
+    classification_source: Text | None = None
     occurred_at: AwareDatetime
+
+    @model_validator(mode='after')
+    def classification_provenance(self):
+        if (self.regulatory_scope_status is not None or self.edibility_status is not None) and not self.classification_source:
+            raise ValueError('classification_source required for recorded classifications')
+        return self
 
 
 class EventOutput(EventInput):
@@ -131,6 +141,10 @@ class ReviewSubmitInput(BaseModel):
 
 
 class ReviewProposalOutput(BaseModel):
+    proposal_version: int = 1
+    approval_revision: int = 0
+    approval_status: Literal["unreviewed","approved_prototype"] = "unreviewed"
+    applied: Literal[False] = False
     correction_record_id: UUID
     target_kind: str
     target_id: UUID

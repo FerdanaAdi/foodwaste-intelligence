@@ -52,6 +52,13 @@ function BackendDetail({ id }: { id: string }) {
     {event.kind === "ready" && <>
       <EventContext event={event.value} count={measurements.kind === "ready" ? measurements.value.length : undefined} />
       <ReviewLink eventId={event.value.event_id} />
+      <section aria-label="Klasifikasi pangan" className="rounded border p-3">
+        <h2>Klasifikasi terpisah</h2>
+        <p>Lingkup regulatori: {event.value.regulatory_scope_status === 'pending_assessment' ? 'Menunggu penilaian' : 'Belum dicatat'}</p>
+        <p>Bagian pangan: {({edible:'Dapat dimakan',inedible:'Tidak dapat dimakan',mixed:'Campuran',unknown:'Belum diketahui'} as Record<string,string>)[event.value.edibility_status ?? ''] ?? 'Belum dicatat'}</p>
+        <p>Sumber: {event.value.classification_source ?? 'Belum dicatat'}</p>
+        <p>Bagian pangan tidak menetapkan status regulatori atau keamanan pangan.</p>
+      </section>
       <section className="ux-panel" aria-label="Rincian catatan kejadian">
         <h2 className="mb-3 text-lg font-semibold">Rincian catatan kejadian</h2>
         <TechnicalDetails><Fields values={{ "Event UUID": event.value.event_id, "Organization UUID": event.value.organization_id, "Site UUID": event.value.site_id,

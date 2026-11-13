@@ -1,3 +1,11 @@
+## M3–M6 continuation — synthetic engineering candidate, 2026-11-13
+
+- Main baseline `2ef5a2da21340ddf797b57e11f4eaa93b7caa493`. M1/M2 DONE. M3–M5 IN PROGRESS. M6 PENDING.
+- M3 adds explicit namespace and reviewer grants, private synthetic attachment storage, approval without application, separate source classifications, and additive `p0_0008`. See [implementation contract](../backend/FWI-M3-P0_COMPLETION.md).
+- Data safety from support commit `491f31aa5a859bff4f1c60c2f529bc24c5d66e9f` protects downgrade and preserves historical audit; see [FWI-03 desk coverage](../testing/FWI-03-desk-regression.md).
+- M4 carries real receipt, lot, recipe, batch and delivery identities through existing workflows. M5 records source-backed KPI catalogue metadata. Numeric effective mass, cost/allocation, production retention and regulatory vocabulary remain OPEN. OP-08, FI-02 and NI-03 remain HELD.
+- Full local frontend 417 PASS, build/typecheck PASS. HTTPS Chrome 21 existing PASS in the full run and 3 new PASS on targeted rerun after correcting selectors, Origin and workflow setup. Proxy 4 PASS. Browser schema/TLS cleanup verified. Owner UAT remains pending.
+
 # M3-03 Gate B — synthetic membership administration, 2026-11-13
 - Worktree `D:/Projects/fwi-m3-memberships`, branch `codex/fwi-m3-03-memberships`, base main `3c864cc0f373fec5b2bffb7bf57d0e4e29be9f98`. Owner authorizes at most one local commit; no push/PR/merge/deploy/UAT. UX/M1/M2/M3 source worktrees preserved; use task-branch Git log for final local SHA.
 - Explicit `membership.manage` per-site seed authority independent of writer/reader; GET/POST `/auth/memberships` and authenticated UI `/backend-demo/memberships`. Exact approved PERSONAS site roster gates grant/change-role/reactivate; revoke can remove an existing site grant without new eligibility. No self-change, admin delegation, global/organization access, accounts/password API or master admin. Full design,23-file scope and targeted independent review packet: `docs/backend/FWI-M3-03.md`.

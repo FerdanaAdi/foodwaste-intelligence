@@ -3,6 +3,7 @@ import {
   createBackendBatch, createBackendBatchIO, createBackendLink, createBackendMenu, createBackendRecipe,
   readBatch, readLineage, type BatchDetail, type LineageView,
 } from "@/backend/p1";
+import { useSearchParams } from "react-router";
 import { BACKEND_MASS_BASES } from "@/backend/contract";
 import { permits } from "@/backend/auth";
 import { EmptyState, LoadingState } from "@/components/states/DisplayStates";
@@ -21,6 +22,7 @@ function FeedbackLine({ feedback }: { feedback: Feedback }) {
 }
 
 export default function BackendProductionPage() {
+  const [params]=useSearchParams();
   const [menu, setMenu] = useState({ menu_code: "", name: "" });
   const [menuFeedback, setMenuFeedback] = useState<Feedback>(null);
   const [recipe, setRecipe] = useState({ recipe_code: "", version_no: "1", menu_id: "",
@@ -30,7 +32,7 @@ export default function BackendProductionPage() {
   const [batchFeedback, setBatchFeedback] = useState<Feedback>(null);
   const [activeBatch, setActiveBatch] = useState<BatchDetail | null>(null);
   const [batchLoading, setBatchLoading] = useState(false);
-  const [io, setIo] = useState({ io_kind: "", quantity: "", mass_basis: "raw", source_lot_id: "", occurred_at: "" });
+  const [io, setIo] = useState({ io_kind: "", quantity: "", mass_basis: "raw", source_lot_id: params.get("lot") ?? "", occurred_at: "" });
   const [ioFeedback, setIoFeedback] = useState<Feedback>(null);
   const [link, setLink] = useState({ source_type: "waste_event", source_id: "", target_type: "batch",
     target_id: "", relation_code: "input_to", quantity: "", mass_basis: "raw", occurred_at: "" });
@@ -52,7 +54,7 @@ export default function BackendProductionPage() {
     setMenuFeedback(result.kind === "saved"
       ? { kind: "success", message: `Menu tersimpan: ${result.value.menu_code}.` }
       : { kind: result.kind === "rejected" ? "error" : "unknown", message: result.message });
-    if (result.kind === "saved") setMenu({ menu_code: "", name: "" });
+    if (result.kind === "saved") {setRecipe(v=>({...v,menu_id:result.value.menu_id}));setMenu({ menu_code: "", name: "" });}
   }
 
   async function submitRecipe(event: React.FormEvent) {
@@ -68,6 +70,7 @@ export default function BackendProductionPage() {
       lines: [{ item_code: recipe.item_code, quantity: recipe.quantity, mass_basis: recipe.mass_basis }],
     });
     setBusy(false);
+    if(result.kind === "saved")setBatch(v=>({...v,recipe_id:result.value.recipe_id}));
     setRecipeFeedback(result.kind === "saved"
       ? { kind: "success", message: `Resep v${result.value.version_no} tersimpan (${result.value.lines.length} baris). Versi lama tidak pernah diubah; perubahan resep = versi baru.` }
       : { kind: result.kind === "rejected" ? "error" : "unknown", message: result.message });

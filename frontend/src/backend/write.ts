@@ -13,6 +13,9 @@ export type EventInput = {
   event_type: "at_risk_surplus" | "actual_loss_discard";
   occurred_at: string;
   stage_code?: string; process_step?: string; operation_date?: string;
+  regulatory_scope_status?: "pending_assessment" | "";
+  edibility_status?: "edible" | "inedible" | "mixed" | "unknown" | "";
+  classification_source?: string;
 };
 export type MeasurementInput = {
   gross: string | null; tare: string | null; net: string | null;
@@ -53,6 +56,8 @@ export function eventErrors(value: EventInput): Record<string, string> {
   if (!isAwareTimestamp(value.occurred_at)) errors.occurred_at = "Gunakan waktu ISO dengan zona waktu, misalnya 2026-11-06T12:00:00+08:00.";
   if (value.operation_date !== undefined && value.operation_date !== "" && !isISODate(value.operation_date))
     errors.operation_date = "Tanggal operasi berformat YYYY-MM-DD; tidak dihitung otomatis dari waktu kejadian.";
+  if ((value.regulatory_scope_status || value.edibility_status) && !value.classification_source?.trim())
+    errors.classification_source = "Isi sumber klasifikasi; lingkup regulatori dan bagian pangan tidak disamakan.";
   return errors;
 }
 
@@ -116,11 +121,14 @@ async function postOnce<T>(path: string, body: EventInput | MeasurementInput, pa
 
 export async function createBackendEvent(input: EventInput): Promise<WriteResult<BackendEvent>> {
   // Optional fields are omitted entirely when blank; the server never receives empty strings.
-  const { stage_code, process_step, operation_date, ...rest } = input;
+  const { stage_code, process_step, operation_date, regulatory_scope_status, edibility_status, classification_source, ...rest } = input;
   const body: EventInput = rest;
   if (stage_code?.trim()) body.stage_code = stage_code.trim();
   if (process_step?.trim()) body.process_step = process_step.trim();
   if (operation_date) body.operation_date = operation_date;
+  if (regulatory_scope_status) body.regulatory_scope_status = regulatory_scope_status;
+  if (edibility_status) body.edibility_status = edibility_status;
+  if (classification_source?.trim()) body.classification_source = classification_source.trim();
   if (Object.keys(eventErrors(body)).length) return { kind: "rejected", message: "Validasi event gagal." };
   return postOnce("/demo/v0.1/events", body, raw => {
     if (typeof raw !== "object" || raw === null || !("event_id" in raw) || typeof raw.event_id !== "string" || !isUUID(raw.event_id)) throw Error("missing server id");

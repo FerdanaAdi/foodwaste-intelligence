@@ -5,6 +5,8 @@ import os
 import sys
 import threading
 import time
+import tempfile
+import shutil
 from pathlib import Path
 from uuid import uuid4
 
@@ -117,6 +119,10 @@ def serve():
         raise RuntimeError('private per-run synthetic credentials required')
     engine = create_engine_for_url(os.environ['FWI_TEST_DATABASE_URL'])
     schema = 'fwi_demo_test_' + uuid4().hex
+    private_files = Path(tempfile.mkdtemp(prefix='fwi-evidence-'+TOKEN+'-')).resolve()
+    from private_evidence_fixture import secure_test_root
+    secure_test_root(private_files)
+    os.environ['FWI_EVIDENCE_ROOT']=str(private_files)
     record = {'schema': schema, 'oid': None, 'run_token': TOKEN, 'cleanup_verified': False}
     factory = app = server = thread = None
     posts = []
@@ -143,10 +149,17 @@ def serve():
             config.attributes['connection'] = connection
             command.upgrade(config, 'head')
             revision = connection.scalar(text('SELECT version_num FROM alembic_version'))
-            if revision != 'auth_0007':
+            if revision != 'p0_0008':
                 raise RuntimeError('unexpected migration baseline')
             identity = dict(connection.execute(text('SELECT current_user AS role,current_database() AS database,version() AS version')).mappings().one())
         seed_demo(factory)
+        if os.environ.get('FWI_BROWSER_MASTER_HISTORY') == '1':
+            from fwi.application.master import insert_reference
+            for version,status in [(1,'active'),(2,'inactive')]:
+                insert_reference(factory,dict(namespace='stage',code='synthetic_history',version=version,
+                    status=status,label='Synthetic history v'+str(version),definition='Synthetic fixture, not an operational vocabulary',
+                    changed_by='synthetic-fixture',changed_at=now(),
+                    **({'supersedes_version':1} if version==2 else {})))
         seed_security(factory, passwords)
         admin_name = os.environ.get('FWI_BROWSER_MEMBERSHIP_ADMIN')
         if admin_name:
@@ -156,6 +169,13 @@ def serve():
             from fwi.infrastructure.database.security_seed import seed_membership_administration
             from fwi.infrastructure.database.demo_seed import SITE_ID
             seed_membership_administration(factory, admin_name, SITE_ID)
+        if os.environ.get('FWI_BROWSER_MASTER_HISTORY') == '1':
+            from fwi.infrastructure.database.completion_seed import seed_authorities
+            from fwi.infrastructure.database.models import Principal
+            from fwi.infrastructure.database.demo_seed import SITE_ID
+            with factory() as session:
+                reviewer=session.scalar(select(Principal.principal_id).where(Principal.username=='site_a_reader'))
+            seed_authorities(factory,masters=[(reviewer,'stage','Owner approved synthetic browser source')],reviewers=[(reviewer,SITE_ID)])
         # Explicit owned-browser-fixture seed; never application startup.
         from fwi.infrastructure.database.p2_seed import seed_kpi_registry
         seed_kpi_registry(factory)
@@ -252,7 +272,11 @@ def serve():
                 clean(engine, record)
         finally:
             engine.dispose()
-        emit({'closed': True, **record})
+        if record.get('cleanup_verified'):
+            assert private_files.parent==Path(tempfile.gettempdir()).resolve() and private_files.name.startswith('fwi-evidence-'+TOKEN+'-')
+            shutil.rmtree(private_files)
+            assert not private_files.exists()
+        emit({'closed': True, **record, 'private_files_removed':not private_files.exists()})
 
 
 if __name__ == '__main__':

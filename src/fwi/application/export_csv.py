@@ -18,7 +18,7 @@ from fwi.domain.demo_measurements import validate_demo_measurement
 
 EVENT_COLUMNS = ('event_id', 'organization_id', 'site_id', 'event_type',
                  'stage_code', 'process_step', 'operation_date', 'occurred_at',
-                 'recorded_at', 'export_label')
+                 'recorded_at', 'regulatory_scope_status', 'edibility_status', 'classification_source', 'export_label')
 MEASUREMENT_COLUMNS = ('measurement_id', 'event_id', 'site_id', 'measured_at',
                        'recorded_at', 'gross', 'tare', 'net', 'original_unit',
                        'mass_basis', 'measurement_method', 'observation_status',
@@ -128,7 +128,7 @@ def serialize_export(events: Iterable[Mapping[str, object]],
         if row['event_id'] in by_event:
             raise ValueError('duplicate event identity in export input')
         row['event_type'] = _text(row['event_type'])  # Pass through, no taxonomy mapping.
-        for key in ('stage_code', 'process_step'):
+        for key in ('stage_code', 'process_step', 'regulatory_scope_status', 'edibility_status', 'classification_source'):
             if row[key] is not None:
                 row[key] = _text(row[key])  # Optional provenance text; absent stays None.
         row['operation_date'] = _date(row['operation_date'])
