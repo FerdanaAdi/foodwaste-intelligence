@@ -1,5 +1,6 @@
-import { useState } from "react";
-import { createBackendDelivery, createBackendService, recordBackendReceiving,
+import { useEffect, useState } from "react";
+import { Link, useSearchParams } from "react-router";
+import { readDelivery, createBackendDelivery, createBackendService, recordBackendReceiving,
   type Delivery, type Service } from "@/backend/p1";
 import { BACKEND_MASS_BASES, isUUID } from "@/backend/contract";
 import { authSnapshot, permits } from "@/backend/auth";
@@ -26,6 +27,23 @@ function ReconciliationBadge({ status }: { status: string }) {
 }
 
 export default function BackendDistributionPage() {
+  const [params] = useSearchParams();
+  const deliveryContext = params.get('delivery');
+  const [selectedDelivery, setSelectedDelivery] = useState<Delivery | null>(null);
+  const [contextError, setContextError] = useState('');
+  useEffect(() => {
+    setSelectedDelivery(null);
+    setContextError('');
+    if (!deliveryContext) return;
+    if (!isUUID(deliveryContext)) { setContextError('Identitas pengiriman tidak valid.'); return; }
+    const controller = new AbortController();
+    void readDelivery(deliveryContext, controller.signal).then(record => {
+      if (!controller.signal.aborted && record.delivery_id === deliveryContext) setSelectedDelivery(record);
+    }).catch(() => {
+      if (!controller.signal.aborted) setContextError('Pengiriman tidak dapat dibaca dengan izin sesi ini.');
+    });
+    return () => controller.abort();
+  }, [deliveryContext]);
   const [delivery, setDelivery] = useState({ to_site_id: "", dispatch_quantity: "", mass_basis: "as_served",
     dispatched_at: "" });
   const [deliveryFeedback, setDeliveryFeedback] = useState<Feedback>(null);
@@ -97,6 +115,14 @@ export default function BackendDistributionPage() {
       <p>Dispatch, receiving, served dan sisa adalah konsep terpisah. Selisih dispatch vs received adalah status review, bukan event limbah otomatis; tidak ada identitas siswa; sampel tanpa frame tidak menghasilkan estimasi populasi.</p>
     </header>
 
+    {contextError && <p role="alert">{contextError}</p>}
+    {selectedDelivery?.delivery_id === deliveryContext && selectedDelivery && <section className={card} aria-label="Pengiriman terpilih">
+      <p>Pengiriman terverifikasi · {selectedDelivery.dispatch_quantity} {selectedDelivery.original_unit}</p>
+      {selectedDelivery.to_site_id === authSnapshot().site && canWrite && <button type="button" onClick={() => {
+        setReceiving(value => ({ ...value, delivery_id: selectedDelivery.delivery_id }));
+        setService(value => ({ ...value, delivery_id: selectedDelivery.delivery_id }));
+      }}>Pilih untuk penerimaan dan pelayanan</button>}
+    </section>}
     {canWrite && <section className={card}>
       <h2 className="text-lg font-semibold">Delivery (dicatat oleh site asal)</h2>
       <form onSubmit={submitDelivery} className="grid gap-3 sm:grid-cols-4" noValidate>
@@ -114,6 +140,7 @@ export default function BackendDistributionPage() {
       {lastDelivery && <div className="rounded border border-slate-300 bg-slate-50 p-3 text-sm">
         <p>Delivery <span className="font-mono">{lastDelivery.delivery_id}</span> · dispatch {lastDelivery.dispatch_quantity} {lastDelivery.original_unit} ({lastDelivery.mass_basis})</p>
         <p><ReconciliationBadge status={lastDelivery.reconciliation_status} /></p>
+        <Link to={`/backend-distribution?delivery=${lastDelivery.delivery_id}`}>Buka pengiriman ini</Link>
       </div>}
     </section>}
 

@@ -390,3 +390,57 @@ def test_reader_can_read_but_not_write_p1(database):
                 reader.close()
     finally:
         app.state.session_factory.kw['bind'].dispose()
+
+
+
+@pytest.mark.parametrize('foreign_source', [False, True])
+def test_lineage_does_not_expose_foreign_endpoint_after_membership_revocation(database, foreign_source):
+    """A valid historical edge must not expose a foreign endpoint after revoke."""
+    from uuid import UUID
+    from fwi.application.security import revoke_membership
+    from fwi.infrastructure.database.models import Membership, Principal
+
+    app = create_app()
+    try:
+        with TestClient(app) as writer, TestClient(app) as recipient:
+            login_client(recipient, 'site_b_writer')
+            remote = recipient.post('/demo/v0.1/events', json=dict(
+                organization_id=ORG, site_id=SITE_B_ID, event_type='at_risk_surplus', occurred_at=AT,
+            ))
+            assert remote.status_code == 201
+            remote_id = remote.json()['event_id']
+            receipt = p1_post(writer, '/p1/v0.1/receipts', receipt_payload(), SITE_A)
+            assert receipt.status_code == 201
+            lot = p1_post(writer, f"/p1/v0.1/receipts/{receipt.json()['receipt_id']}/lots", lot_payload(), SITE_A)
+            assert lot.status_code == 201
+            lot_id = lot.json()['lot_id']
+            with database() as session, session.begin():
+                writer_id = session.scalar(select(Principal.principal_id).where(Principal.username == 'site_a_writer'))
+                session.add(Membership(principal_id=writer_id, site_id=UUID(SITE_B_ID), role='writer' if foreign_source else 'reader'))
+            link = p1_post(writer, '/p1/v0.1/links', dict(
+                source_type='waste_event' if foreign_source else 'lot',
+                source_id=remote_id if foreign_source else lot_id,
+                target_type='lot' if foreign_source else 'waste_event',
+                target_id=lot_id if foreign_source else remote_id,
+                relation_code='transfer_of', quantity='2.00', original_unit='kg', mass_basis='raw',
+                occurred_at=AT, note='private historical link',
+            ), SITE_B_ID if foreign_source else SITE_A)
+            assert link.status_code == 201
+            path = f'/p1/v0.1/lineage/lot/{lot_id}'
+            before = writer.get(path)
+            assert before.status_code == 200 and len(before.json()['links']) == 1
+            assert before.json()['distinct_source_event_count'] == int(foreign_source)
+            revoke_membership(database, writer_id, UUID(SITE_B_ID))
+            assert writer.get(f'/demo/v0.1/events/{remote_id}').status_code == 404
+            after = writer.get(path)
+            assert after.status_code == 200
+            assert after.json()['links'] == []
+            assert after.json()['distinct_source_event_count'] == 0
+            assert remote_id not in after.text and link.json()['link_id'] not in after.text
+            assert 'private historical link' not in after.text
+            from fwi.infrastructure.database.models_p1 import P1MaterialFlowLink
+            with database() as session:
+                stored = session.get(P1MaterialFlowLink, UUID(link.json()['link_id']))
+                assert stored is not None and stored.note == 'private historical link'
+    finally:
+        app.state.session_factory.kw['bind'].dispose()

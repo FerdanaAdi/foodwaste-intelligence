@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, useRef, useSyncExternalStore } from "react";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { authSnapshot, permits, subscribeAuth } from "@/backend/auth";
 import {
   createBackendLot, readReceiptLots,
@@ -177,8 +177,8 @@ function LotPicker({ receiptId, onOpen }: {
   </div>;
 }
 
-function DispositionSection() {
-  const [form, setForm] = useState({ eventId: "", outcome_type: "", quantity: "", mass_basis: "", occurred_at: "", food_safety_status: "", handover_ref: "" });
+function DispositionSection({ eventId }: { eventId: string }) {
+  const [form, setForm] = useState({ eventId, outcome_type: "", quantity: "", mass_basis: "", occurred_at: "", food_safety_status: "", handover_ref: "" });
   const [feedback, setFeedback] = useState<Feedback>(null);
   const [records, setRecords] = useState<Disposition[] | null>(null);
   const [busy, setBusy] = useState(false);
@@ -361,6 +361,8 @@ function TrendsSection() {
 
 export default function BackendOperationsPage() {
   const auth = useSyncExternalStore(subscribeAuth, authSnapshot);
+  const [params] = useSearchParams();
+  const eventId = params.get("event") ?? "";
   if (auth.phase !== "ready" || !auth.site) {
     return <section role="status" className={card}>
       <h1 className="text-xl font-bold">Operasi P1 kandidat</h1>
@@ -374,7 +376,7 @@ export default function BackendOperationsPage() {
       <p className="text-sm text-amber-800">Data sintetis saja. Bukan sistem resmi BGN; tidak ada KPI HELD yang dihitung; tidak ada keputusan otomatis keamanan pangan.</p>
     </header>
     <ReceivingSection />
-    <DispositionSection />
+    <DispositionSection key={eventId} eventId={eventId} />
     <KpiCatalogueSection />
     <TrendsSection />
   </div>;

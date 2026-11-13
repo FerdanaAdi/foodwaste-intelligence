@@ -161,7 +161,7 @@ describe("BackendProductionPage (FR-102/104)", () => {
 
 describe("BackendDistributionPage (FR-103)", () => {
   it("shows needs_review for a 100 vs 95 mismatch, never an automatic waste event", async () => {
-    render(<BackendDistributionPage />);
+    render(<MemoryRouter><BackendDistributionPage /></MemoryRouter>);
     const user = userEvent.setup();
     await user.type(screen.getByLabelText(/UUID site tujuan/i), SITE);
     await user.type(screen.getByLabelText(/Dispatch \(kg\)/i), "100");
@@ -179,7 +179,7 @@ describe("BackendDistributionPage (FR-103)", () => {
   });
 
   it("labels an unframed sample and never presents a population estimate", async () => {
-    render(<BackendDistributionPage />);
+    render(<MemoryRouter><BackendDistributionPage /></MemoryRouter>);
     const user = userEvent.setup();
     await user.type(screen.getByLabelText(/Served count/i), "190");
     await user.type(screen.getByLabelText(/Sample size/i), "5");

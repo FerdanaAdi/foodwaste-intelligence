@@ -1,6 +1,6 @@
 import {expect} from '@playwright/test';
-import {test,login,SITE_A} from './backend-fixture.mjs';
-import {fillTimestamp} from './ux-helpers.mjs';
+import {test,login,SITE_A,SITE_B} from './backend-fixture.mjs';
+import {fillTimestamp,openSourceDetails} from './ux-helpers.mjs';
 
 test('P0 completion: independent AC14 classification and real source history',async({page,backend})=>{
  await login(page,backend);await page.goto('/backend-demo/capture');
@@ -26,7 +26,17 @@ test('P0 completion: independent AC14 classification and real source history',as
  await expect(page.getByText('Versi 2: Synthetic history v2')).toBeVisible();
 });
 
-test('M4 workflow: receipt lot uses actual parent and stock, without new waste event',async({page,backend})=>{
+test('M4 workflow: receipt to disposition preserves one authorized waste event', async ({page,backend}) => {
+ const timestamp = '2026-11-13T08:00:00+08:00';
+ const origin = 'https://127.0.0.1:5173';
+ const get = path => page.request.get(path, {headers: {Origin: origin}});
+ const submit = async (label, path) => {
+  const pending = page.waitForResponse(response => new URL(response.url()).pathname === path && response.request().method() === 'POST', {timeout: 10000});
+  await page.getByRole('button',{name:label,exact:true}).click();
+  const response = await pending;
+  expect(response.status(), path).toBe(201);
+  return response.json();
+ };
  await login(page,backend);await page.goto('/backend-operations');
  await page.getByLabel('Ref. penerimaan').fill('RECEIPT-SYN-INTEGRATED');
  await page.getByLabel('Diterima pada (ISO+offset)').fill('2026-11-13T08:00:00+08:00');
@@ -43,6 +53,11 @@ test('M4 workflow: receipt lot uses actual parent and stock, without new waste e
  await expect(page.getByText(/Stok teramati provisional/)).toBeVisible();
  const snap=await backend.snapshot();expect(snap.data.waste_events).toHaveLength(0);expect(snap.data.p1_lots).toHaveLength(1);
  expect(snap.data.p1_lots[0].lot_id).toBe(lot.lot_id);
+ await page.getByLabel('Jenis mutasi').selectOption('issue_to_batch');
+ await page.getByLabel('Arah',{exact:true}).selectOption('out');
+ await page.getByLabel('Jumlah kg',{exact:true}).fill('1');
+ await page.getByLabel('Waktu mutasi',{exact:true}).fill(timestamp);
+ await submit('Catat mutasi lot', `/p1/v0.1/lots/${lot.lot_id}/movements`);
  await page.getByRole('link',{name:'Gunakan lot pada produksi'}).click();
  await expect(page).toHaveURL(new RegExp('/backend-production[?]lot='+lot.lot_id+'$'));
  await page.getByLabel('Kode menu',{exact:true}).fill('SYN-MENU');
@@ -56,8 +71,104 @@ test('M4 workflow: receipt lot uses actual parent and stock, without new waste e
  await page.getByRole('button',{name:'Simpan resep (versi baru)',exact:true}).click();
  await expect(page.getByLabel('UUID resep',{exact:true})).toHaveValue(/^[0-9a-f-]{36}$/);
  await page.getByLabel('Tanggal operasi',{exact:true}).fill('2026-11-13');
- await page.getByRole('button',{name:'Buat batch',exact:true}).click();
+ const batch = await submit('Buat batch','/p1/v0.1/batches');
  await expect(page.getByLabel('Lot sumber',{exact:true})).toHaveValue(lot.lot_id);
+ await page.getByLabel('Jenis io').selectOption('input');
+ await page.getByLabel('Jumlah kg',{exact:true}).fill('1');
+ await page.getByLabel('Waktu io').fill(timestamp);
+ const input = await submit('Catat IO', `/p1/v0.1/batches/${batch.batch_id}/io`);
+ expect(input.batch_id).toBe(batch.batch_id);
+ await page.goto('/backend-distribution');
+ await page.getByLabel('UUID site tujuan').fill(SITE_B);
+ await page.getByLabel('Dispatch (kg)').fill('0.8');
+ await page.getByLabel('Dispatched at').fill(timestamp);
+ const delivery = await submit('Catat delivery','/p1/v0.1/deliveries');
+ const deliveryLink = await page.getByRole('link',{name:'Buka pengiriman ini'}).getAttribute('href');
+ await page.goto('/backend-production');
+ const linkRecords = async (sourceType, sourceId, targetType, targetId, relation) => {
+  await page.getByLabel('Tipe sumber').selectOption(sourceType);
+  await page.getByLabel('UUID sumber').fill(sourceId);
+  await page.getByLabel('Tipe target').selectOption(targetType);
+  await page.getByLabel('UUID target').fill(targetId);
+  await page.getByLabel('Relasi').selectOption(relation);
+  await page.getByLabel('Waktu link').fill(timestamp);
+  await submit('Buat link','/p1/v0.1/links');
+ };
+ await linkRecords('batch',batch.batch_id,'delivery',delivery.delivery_id,'input_to');
+ await page.getByRole('button',{name:'Keluar',exact:true}).click();
+ await login(page,backend,'site_b_writer');
+ await page.goto(deliveryLink);
+ await page.getByRole('button',{name:'Pilih untuk penerimaan dan pelayanan'}).click();
+ await page.getByLabel('Received (kg)').fill('0.7');
+ await page.getByLabel('Received at',{exact:true}).fill(timestamp);
+ const received = await submit('Catat receiving',`/p1/v0.1/deliveries/${delivery.delivery_id}/receiving`);
+ expect(received.reconciliation_status).toBe('needs_review');
+ await page.getByLabel('Served count').fill('4');
+ const service = await submit('Catat meal service','/p1/v0.1/services');
+ expect(service.delivery_id).toBe(delivery.delivery_id);
+ expect((await backend.snapshot()).counts.waste_events).toBe(0);
+ expect((await get(`/p1/v0.1/lineage/batch/${batch.batch_id}`)).status()).toBe(404);
+ await page.goto('/backend-demo/capture');
+ await page.getByLabel('Jenis kejadian').selectOption('actual_loss_discard');
+ await fillTimestamp(page,'Tanggal dan waktu kejadian',timestamp);
+ const event = await submit('Simpan kejadian','/demo/v0.1/events');
+ const eventId = event.event_id;
+ const measurementPath = `/demo/v0.1/events/${eventId}/measurements`;
+ const fillMeasurement = async (basis, status) => {
+  await page.getByLabel(/^Kondisi hasil pengukuran/).selectOption(status);
+  await page.getByLabel(/^Kondisi pangan saat diukur/).selectOption(basis);
+  if (status === 'measured_zero') {
+   await page.getByLabel('Berat total termasuk wadah (kg)', {exact:true}).fill('0.4');
+   await page.getByLabel('Berat wadah (kg)', {exact:true}).fill('0.4');
+   await page.getByLabel('Berat pangan tanpa wadah (kg)', {exact:true}).fill('0');
+  }
+  await openSourceDetails(page);
+  await page.getByLabel('Bagaimana berat diperoleh?',{exact:true}).fill('synthetic_scale');
+  await page.getByLabel('Dari mana data ini berasal?',{exact:true}).fill('M4 browser fixture');
+  await fillTimestamp(page,'Tanggal dan waktu pengukuran',timestamp);
+ };
+ await fillMeasurement('cooked','measured_zero');
+ await submit('Simpan pengukuran',measurementPath);
+ await expect(page.getByText(/Pengukuran tersimpan/)).toBeVisible();
+ await fillMeasurement('as_served','missing');
+ let dispatches = 0;
+ await page.route(`**${measurementPath}`, async route => {
+  if (route.request().method() !== 'POST') return route.continue();
+  dispatches++;
+  expect((await route.fetch({maxRetries:0})).status()).toBe(201);
+  await route.abort('connectionreset');
+ });
+ await page.getByRole('button',{name:'Simpan pengukuran',exact:true}).click();
+ await expect(page.getByText(/hasil operasi belum terkonfirmasi|Hasil pengiriman belum diketahui|UNKNOWN/i).first()).toBeVisible();
+ await page.reload();
+ await expect(page.getByRole('link',{name:'Buka hasil terkonfirmasi (GET)'})).toHaveCount(3);
+ expect(dispatches).toBe(1);
+ expect((await backend.snapshot()).posts.filter(post => post.path === measurementPath)).toHaveLength(2);
+ await page.unroute(`**${measurementPath}`);
+ await page.goto('/backend-production');
+ await linkRecords('waste_event',eventId,'meal_service',service.service_id,'leftover_of');
+ const lineage = await (await get(`/p1/v0.1/lineage/meal_service/${service.service_id}`)).json();
+ expect(lineage.distinct_source_event_count).toBe(1);
+ expect(lineage.links.map(link => link.source_id)).toEqual([eventId]);
+ await page.goto(`/backend-demo/events/${eventId}`);
+ await page.getByRole('link',{name:'Buka disposisi kejadian ini'}).click();
+ await expect(page.getByLabel('UUID event sumber')).toHaveValue(eventId);
+ await page.getByRole('combobox',{name:'Outcome provisional'}).selectOption('compost');
+ await page.getByRole('combobox',{name:'Status food safety'}).selectOption('not_assessed');
+ await page.getByLabel('Jumlah (kg)',{exact:true}).fill('0.1');
+ await page.getByRole('combobox',{name:'Mass basis'}).selectOption('cooked');
+ await page.getByLabel('Waktu (ISO+offset)',{exact:true}).fill(timestamp);
+ const disposition = await submit('Catat disposisi','/p1/v0.1/dispositions');
+ expect(disposition).toMatchObject({event_id:eventId,allocation_status:'reference_unresolved'});
+ const final = await backend.snapshot();
+ expect(final.counts).toMatchObject({waste_events:1,measurements:2,p1_dispositions:1});
+ expect(final.data.measurements).toEqual(expect.arrayContaining([
+  expect.objectContaining({event_id:eventId,observation_status:'measured_zero',mass_basis:'cooked'}),
+  expect.objectContaining({event_id:eventId,observation_status:'missing',mass_basis:'as_served',net:null}),
+ ]));
+ expect(final.data.measurements.find(row=>row.observation_status==='measured_zero').net).toMatch(/^0(?:\.0+)?$/);
+ await backend.revokeSessions();
+ expect((await get(`/p1/v0.1/lineage/meal_service/${service.service_id}`)).status()).toBe(401);
 });
 
 test('P0 completion: explicit master/reviewer and private evidence remain separately authorized',async({page,backend})=>{
