@@ -13,6 +13,7 @@ import BackendEventDetailPage from "./pages/BackendEventDetailPage";
 import BackendCapturePage from "./pages/BackendCapturePage";
 import BackendLedgerPage from "./pages/BackendLedgerPage";
 import BackendDataQualityPage from "./pages/BackendDataQualityPage";
+import BackendMembershipPage from "./pages/BackendMembershipPage";
 import BackendMasterPage from "./pages/BackendMasterPage";
 import BackendEvidencePage from "./pages/BackendEvidencePage";
 import BackendReviewPage from "./pages/BackendReviewPage";
@@ -39,6 +40,7 @@ export default function App() {
             <Route path="/backend-demo" element={<BackendEventDetailPage />} />
             <Route path="/backend-demo/ledger" element={<BackendLedgerPage />} />
             <Route path="/backend-demo/data-quality" element={<BackendDataQualityPage />} />
+            <Route path="/backend-demo/memberships" element={<BackendMembershipPage />} />
             <Route path="/backend-demo/master" element={<BackendMasterPage />} />
             <Route path="/backend-demo/evidence" element={<BackendEvidencePage />} />
             <Route path="/backend-demo/review" element={<BackendReviewPage />} />

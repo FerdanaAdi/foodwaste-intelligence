@@ -242,3 +242,35 @@ class WriteIntent(Base):
     result_id: Mapped[UUID | None] = mapped_column(Uuid)
     state: Mapped[str] = mapped_column(String, default='registered')
     registered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class MembershipAdmin(Base):
+    """Seed-only site administrative authority, independent of operational roles."""
+    __tablename__ = 'auth_membership_admins'
+    principal_id: Mapped[UUID] = mapped_column(ForeignKey('auth_principals.principal_id'), primary_key=True)
+    site_id: Mapped[UUID] = mapped_column(ForeignKey('sites.site_id'), primary_key=True)
+
+
+class MembershipEligibility(Base):
+    """Explicit synthetic site roster; not inferred from an organization or payload."""
+    __tablename__ = 'auth_membership_eligibility'
+    principal_id: Mapped[UUID] = mapped_column(ForeignKey('auth_principals.principal_id'), primary_key=True)
+    site_id: Mapped[UUID] = mapped_column(ForeignKey('sites.site_id'), primary_key=True)
+
+
+class MembershipChange(Base):
+    __tablename__ = 'auth_membership_changes'
+    __table_args__ = (
+        CheckConstraint("old_role IS NULL OR old_role IN ('reader','writer')", name='membership_change_old_role'),
+        CheckConstraint("new_role IN ('reader','writer')", name='membership_change_new_role'),
+        CheckConstraint("length(trim(reason)) BETWEEN 1 AND 1000", name='membership_change_reason'),
+    )
+    audit_id: Mapped[UUID] = mapped_column(ForeignKey('audit_events.audit_id'), primary_key=True)
+    principal_id: Mapped[UUID] = mapped_column(ForeignKey('auth_principals.principal_id'))
+    site_id: Mapped[UUID] = mapped_column(ForeignKey('sites.site_id'))
+    old_role: Mapped[str | None] = mapped_column(String)
+    old_active: Mapped[bool | None] = mapped_column(Boolean)
+    new_role: Mapped[str] = mapped_column(String)
+    new_active: Mapped[bool] = mapped_column(Boolean)
+    reason: Mapped[str] = mapped_column(String)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

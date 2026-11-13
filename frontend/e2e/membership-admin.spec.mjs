@@ -1,0 +1,83 @@
+/** Gate B real HTTPS/DB acceptance; no automatic POST replay. */
+import { expect } from '@playwright/test';
+import { test, login, SITE_A, SITE_B } from './backend-fixture.mjs';
+const ORIGIN = 'https://127.0.0.1:5173';
+
+test('M3-03: explicit site admin changes role/revokes/reactivates with atomic audit; reader/foreign denied', async ({ page, backend }) => {
+  await login(page,backend);
+  await page.goto('/backend-demo/memberships');
+  await page.getByLabel('Anggota roster lokasi').selectOption({label:'site_a_reader'});
+  await expect(page.getByText('Peran: reader · Status: Aktif')).toBeVisible();
+  await page.getByLabel('Peran operasional').selectOption('writer');
+  await page.getByLabel('Alasan perubahan').fill('synthetic browser role change');
+  const reply = page.waitForResponse(r => new URL(r.url()).pathname === '/auth/memberships' && r.request().method() === 'POST');
+  await page.getByRole('button',{name:'Ubah peran',exact:true}).click();
+  const response = await reply; expect(response.status()).toBe(200); const changed = await response.json();
+  await expect(page.getByRole('status')).toHaveText(/audit tersimpan bersama/);
+  let snap = await backend.snapshot();
+  const delta = snap.membership_changes.find(row => row.audit_id === changed.audit_id);
+  const audit = snap.data.audit_events.find(row => row.audit_id === changed.audit_id);
+  expect(delta).toMatchObject({ site_id:SITE_A, principal_id:changed.principal_id, old_role:'reader', old_active:true, new_role:'writer',new_active:true });
+  expect(audit.actor_principal_id).toBeTruthy(); expect(audit.actor).toBe(audit.actor_principal_id);
+  await page.getByRole('button',{name:'Muat ulang daftar (GET)'}).click();
+  await page.getByLabel('Anggota roster lokasi').selectOption({label:'site_a_reader'});
+  await expect(page.getByText('Peran: writer · Status: Aktif')).toBeVisible();
+  await page.getByLabel('Alasan perubahan').fill('synthetic revoke');
+  await page.getByRole('button',{name:'Cabut akses',exact:true}).click();
+  await expect(page.getByRole('status')).toHaveText(/audit tersimpan bersama/);
+  await page.reload();
+  await page.getByLabel('Anggota roster lokasi').selectOption({label:'site_a_reader'});
+  await expect(page.getByText('Peran: writer · Status: Dicabut')).toBeVisible();
+  await page.getByLabel('Alasan perubahan').fill('synthetic reactivate');
+  await page.getByRole('button',{name:'Aktifkan kembali',exact:true}).click();
+  await expect(page.getByRole('status')).toHaveText(/audit tersimpan bersama/);
+  const session = await page.request.get('/auth/session',{headers:{Origin:ORIGIN}}); const identity = await session.json();
+  const foreign = await page.request.get(`/auth/memberships?site_id=${SITE_B}`,{headers:{Origin:ORIGIN}});
+  expect(foreign.status()).toBe(403);
+  const self = await page.request.post('/auth/memberships',{headers:{Origin:ORIGIN,'X-CSRF-Token':identity.csrf_token},data:{
+    site_id:SITE_A,principal_id:identity.principal_id,action:'revoke',role:null,reason:'synthetic self denial',expected_role:'writer',expected_active:true}});
+  expect(self.status()).toBe(403);
+  snap = await backend.snapshot(); expect(snap.membership_changes).toHaveLength(3);
+  await page.getByRole('button',{name:'Keluar',exact:true}).click();
+  await login(page,backend,'site_a_reader');
+  await page.goto('/backend-demo/memberships');
+  await expect(page.getByRole('alert')).toHaveText(/Tidak ada izin administrasi/);
+  const denied = await page.request.get(`/auth/memberships?site_id=${SITE_A}`,{headers:{Origin:ORIGIN}});
+  expect(denied.status()).toBe(403);
+  await page.getByRole('button',{name:'Keluar',exact:true}).click();
+  await login(page,backend,'site_b_writer');
+  expect((await page.request.get(`/auth/memberships?site_id=${SITE_A}`,{headers:{Origin:ORIGIN}})).status()).toBe(403);
+});
+
+test('M3-03: committed membership acknowledgement lost, GET/refresh/login never unlock or replay', async ({ page, backend }) => {
+  await login(page,backend); await page.goto('/backend-demo/memberships');
+  await page.getByLabel('Anggota roster lokasi').selectOption({label:'site_a_reader'});
+  await page.getByLabel('Alasan perubahan').fill('synthetic lost acknowledgement');
+  let posts = 0;
+  await page.route('**/auth/memberships',async route => {
+    if (route.request().method() !== 'POST') return route.continue();
+    posts++;
+    const response = await route.fetch(); expect(response.status()).toBe(200);
+    const result = await response.json(); const snap = await backend.snapshot();
+    expect(snap.membership_changes.filter(row => row.audit_id === result.audit_id)).toHaveLength(1);
+    expect(snap.data.audit_events.filter(row => row.audit_id === result.audit_id)).toHaveLength(1);
+    await route.fulfill({status:503,headers:response.headers(),body:JSON.stringify({detail:'synthetic lost acknowledgement'})});
+  });
+  await page.getByRole('button',{name:'Cabut akses',exact:true}).click();
+  await expect(page.getByRole('alert')).toHaveText(/Pengiriman terkunci/);
+  await page.getByRole('button',{name:'Muat ulang daftar (GET)'}).click();
+  await page.getByLabel('Anggota roster lokasi').selectOption({label:'site_a_reader'});
+  await expect(page.getByRole('alert')).toHaveText(/Pengiriman terkunci/);
+  await page.reload();
+  await page.getByLabel('Anggota roster lokasi').selectOption({label:'site_a_reader'});
+  await page.getByLabel('Alasan perubahan').fill('must not replay');
+  await expect(page.getByRole('button',{name:'Aktifkan kembali',exact:true})).toBeDisabled();
+  await page.getByRole('button',{name:'Keluar',exact:true}).click();
+  await login(page,backend); await page.goto('/backend-demo/memberships');
+  await page.getByLabel('Anggota roster lokasi').selectOption({label:'site_a_reader'});
+  await expect(page.getByRole('alert')).toHaveText(/Pengiriman terkunci/);
+  expect(posts).toBe(1);
+  const final = await backend.snapshot();
+  expect(final.membership_changes).toHaveLength(1);
+  expect(final.posts.filter(row => row.path === '/auth/memberships')).toHaveLength(1);
+});

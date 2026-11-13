@@ -164,7 +164,12 @@ def test_reader_idor_site_context_and_no_membership(clients, database):
     assert writer.post('/demo/v0.1/events/' + foreign_id + '/measurements', json=measurement_payload()).status_code == 404
     assert writer.post('/demo/v0.1/events', json=event_payload(SITE_B)).status_code == 403
     assert writer.post('/demo/v0.1/events', json={**event_payload(), 'organization_id': str(uuid4())}).status_code == 403
-    assert writer.post('/auth/memberships', json={}).status_code == 404  # no administration API
+    # Gate B exists, but an operational writer has no administrative authority.
+    with database() as session:
+        target = session.scalar(select(Principal.principal_id).where(Principal.username == 'site_a_reader'))
+    assert writer.post('/auth/memberships', json=dict(site_id=str(SITE_ID), principal_id=str(target),
+        action='revoke', role=None, reason='synthetic denied administration',
+        expected_role='reader', expected_active=True)).status_code == 403
     with database() as session, session.begin():
         principal = session.scalar(select(Principal).where(Principal.username == 'site_a_writer'))
         member = session.scalar(select(Membership).where(Membership.principal_id == principal.principal_id))
@@ -380,7 +385,9 @@ def test_migration_preserves_legacy_audit_and_reverses_only_without_security_evi
             command.upgrade(config, 'demo_0001')
             audit_id = uuid4()
             connection.execute(text("INSERT INTO audit_events(audit_id,entity_type,entity_id,action,actor,recorded_at) VALUES(:id,'fixture',:id,'created','synthetic-demo-actor',now())"), {'id': audit_id})
-            command.upgrade(config, 'head')
+            # This historical test covers auth_0002's empty-security rollback only.
+            # Gate B history is forward-only; do not traverse auth_0007 here.
+            command.upgrade(config, 'auth_0002')
             assert connection.scalar(text('SELECT actor FROM audit_events WHERE audit_id=:id'), {'id': audit_id}) == 'synthetic-demo-actor'
             command.downgrade(config, 'demo_0001')
             assert connection.scalar(text('SELECT audit_id FROM audit_events')) == audit_id

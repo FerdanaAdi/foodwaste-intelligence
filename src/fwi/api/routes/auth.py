@@ -3,11 +3,11 @@ from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request, Response
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StrictBool
 from sqlalchemy import select
 
-from fwi.application import demo, security
-from fwi.infrastructure.database.models import Membership, WasteEvent, WriteIntent
+from fwi.application import demo, security, membership_admin
+from fwi.infrastructure.database.models import Membership, MembershipAdmin, WasteEvent, WriteIntent
 
 router = APIRouter(prefix='/auth', tags=['synthetic authentication'])
 
@@ -76,9 +76,13 @@ def context(request: Request, response: Response):
         bind_context(request, access)
         members = access.session.scalars(select(Membership).where(
             Membership.principal_id == access.principal.principal_id, Membership.active.is_(True)))
+        sites = {str(m.site_id): set(security.PERMISSIONS[m.role]) for m in members}
+        for grant in access.session.scalars(select(MembershipAdmin).where(
+                MembershipAdmin.principal_id == access.principal.principal_id)):
+            sites.setdefault(str(grant.site_id), set()).add('membership.manage')
         result = {'principal_id': str(access.principal.principal_id),
                   'auth_context_id': str(access.login_session.session_id), 'csrf_token': security.csrf_for(secret),
-                  'sites': [{'site_id': str(m.site_id), 'permissions': sorted(security.PERMISSIONS[m.role])} for m in members]}
+                  'sites': [{'site_id': site, 'permissions': sorted(actions)} for site, actions in sorted(sites.items())]}
     response.headers['Cache-Control'] = 'no-store'
     return result
 
@@ -134,5 +138,39 @@ def recover_intents(request: Request, response: Response):
                    'event_id': str(r.event_id) if r.event_id else None,
                    'result_id': str(r.result_id) if r.result_id else None, 'state': r.state,
                    'registered_at': r.registered_at.isoformat()} for r in records]
+    response.headers['Cache-Control'] = 'no-store'
+    return result
+
+
+class MembershipCommand(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    site_id: UUID
+    principal_id: UUID
+    action: Literal['grant', 'change_role', 'revoke', 'reactivate']
+    role: Literal['reader', 'writer'] | None = None
+    reason: str = Field(min_length=1, max_length=1000)
+    expected_role: Literal['reader', 'writer'] | None
+    expected_active: StrictBool | None
+
+
+@router.get('/memberships', dependencies=[Depends(authenticated)])
+def membership_list(site_id: UUID, request: Request, response: Response):
+    if set(request.query_params) != {'site_id'} or len(request.query_params.getlist('site_id')) != 1:
+        raise security.Denied(400)
+    with security.protected(factory(request), request.cookies.get(security.SESSION_COOKIE)) as access:
+        bind_context(request, access)
+        result = membership_admin.list_memberships(access, site_id)
+    response.headers['Cache-Control'] = 'no-store'
+    return result
+
+
+@router.post('/memberships', dependencies=[Depends(authenticated)])
+def membership_change(body: MembershipCommand, request: Request, response: Response):
+    if request.query_params:
+        raise security.Denied(400)
+    with security.protected(factory(request), request.cookies.get(security.SESSION_COOKIE),
+            request.headers.get('x-csrf-token'), write=True, lock_principal_ids=(body.principal_id,)) as access:
+        bind_context(request, access)
+        result = membership_admin.change_membership(access, **body.model_dump())
     response.headers['Cache-Control'] = 'no-store'
     return result

@@ -15,7 +15,7 @@ from fwi.infrastructure.database.demo_seed import seed_demo
 from test_demo_postgresql import verify_test_target, drop_created_schema
 
 
-@pytest.mark.parametrize('upgrade_p0', [False, True])
+@pytest.mark.parametrize('upgrade_p0', [False, True, 'int_p1_0006'])
 def test_integrated_fresh_and_existing_p0_preserve_history(upgrade_p0):
     url = os.environ.get('FWI_TEST_DATABASE_URL')
     if not url:
@@ -38,7 +38,7 @@ def test_integrated_fresh_and_existing_p0_preserve_history(upgrade_p0):
         if upgrade_p0:
             with factory.kw['bind'].begin() as c:
                 config.attributes['connection'] = c
-                command.upgrade(config, 'demo_0005')
+                command.upgrade(config, 'int_p1_0006' if upgrade_p0 == 'int_p1_0006' else 'demo_0005')
             seed_demo(factory)
             from uuid import UUID
             from fwi.application import demo
@@ -52,16 +52,20 @@ def test_integrated_fresh_and_existing_p0_preserve_history(upgrade_p0):
             for changes in [{}, dict(gross='0.4', tare='0.4', net='0', observation_status='measured_zero')]:
                 demo.add_measurement(factory, UUID(str(event['event_id'])),
                     MeasurementInput(**measurement_payload(**changes)).model_dump())
+            if upgrade_p0 == 'int_p1_0006':
+                from auth_support import PASSWORDS
+                from fwi.infrastructure.database.security_seed import seed_security
+                seed_security(factory, PASSWORDS)
             with factory.kw['bind'].connect() as c:
                 tables = [n for n in inspect(c).get_table_names() if n != 'alembic_version']
                 before = {n: list(c.execute(text(f'SELECT * FROM "{n}"')).mappings()) for n in tables}
-                assert len(before['audit_events']) == 5
+                assert len(before['audit_events']) == (12 if upgrade_p0 == 'int_p1_0006' else 5)
                 assert len(before['waste_events']) == 1 and len(before['measurements']) == 2
         with factory.kw['bind'].begin() as c:
             verify_test_target(c, schema)
             config.attributes['connection'] = c
             command.upgrade(config, 'head')
-            assert list(c.scalars(text('SELECT version_num FROM alembic_version'))) == ['int_p1_0006']
+            assert list(c.scalars(text('SELECT version_num FROM alembic_version'))) == ['auth_0007']
             assert compare_metadata(MigrationContext.configure(c), Base.metadata) == []
             assert 'evidence_references' in inspect(c).get_table_names()
             assert 'p1_receipts' in inspect(c).get_table_names()

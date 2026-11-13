@@ -25,6 +25,7 @@ const EVIDENCE = "/demo/v0.1/evidence";
 const REVIEWS = "/demo/v0.1/reviews";
 const EXPORT = "/demo/v0.1/export";
 const QUERY_KEYS: Record<string, string[]> = {
+  ["/auth/memberships"]: ["site_id"],
   [LEDGER_LIST]: ["site_id", "event_type", "stage_code", "operation_date_from", "operation_date_to", "page", "page_size"],
   [DATA_QUALITY]: ["site_id", "stage_code", "operation_date_from", "operation_date_to"],
   [MASTER_REFERENCES]: ["namespace", "include_inactive"],
@@ -71,8 +72,8 @@ export default defineConfig({
         const scopedGet = [LEDGER_LIST, DATA_QUALITY, MASTER_NAMESPACES, MASTER_REFERENCES, MASTER_HISTORY, EVIDENCE, REVIEWS, EXPORT];
         const scopedPost = [EVIDENCE, REVIEWS];
         const method = request.method;
-        const allowed = method === "GET" ? (isP1Get || isEvent || isHistory || ['/auth/preauth','/auth/session','/auth/intents', ...scopedGet].includes(route))
-          : method === "POST" ? (isP1Post || route === EVENT_CREATE || isHistory || ['/auth/login','/auth/logout','/auth/intents', ...scopedPost].includes(route)) : false;
+        const allowed = method === "GET" ? (isP1Get || isEvent || isHistory || ['/auth/preauth','/auth/session','/auth/intents','/auth/memberships', ...scopedGet].includes(route))
+          : method === "POST" ? (isP1Post || route === EVENT_CREATE || isHistory || ['/auth/login','/auth/logout','/auth/intents','/auth/memberships', ...scopedPost].includes(route)) : false;
         if (!allowed) {
           response.statusCode = method === "GET" || method === "POST" ? 404 : 405;
           response.end("Synthetic demo route/method not allowed."); return;
@@ -119,7 +120,7 @@ export default defineConfig({
     https,
     strictPort: true,
     proxy: {
-      "^/(?:auth/(?:preauth|session|login|logout|intents)|demo/v0\\.1/(?:events(?:/[0-9a-fA-F-]+(?:/measurements)?)?|data-quality|master/(?:namespaces|references(?:/history)?)|evidence|reviews|export)(?:\\?.*)?|p[12]/v0\\.1(?:/[a-zA-Z0-9_-]+)*(?:\\?.*)?)$": {
+      "^/(?:auth/(?:preauth|session|login|logout|intents|memberships)(?:\\?.*)?|demo/v0\\.1/(?:events(?:/[0-9a-fA-F-]+(?:/measurements)?)?|data-quality|master/(?:namespaces|references(?:/history)?)|evidence|reviews|export)(?:\\?.*)?|p[12]/v0\\.1(?:/[a-zA-Z0-9_-]+)*(?:\\?.*)?)$": {
         target: 'https://127.0.0.1:8000',
         secure: true,
         agent: tlsReady ? new Agent({ ca: readFileSync(tlsPaths[2]!), rejectUnauthorized: true }) : undefined,

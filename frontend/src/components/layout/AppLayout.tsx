@@ -1,6 +1,7 @@
 import { NavLink, Outlet, useLocation } from "react-router";
 import { DEMO_BANNER, HELD_KPIS } from "@/domain/types";
 const OTHER_ITEMS = [
+  { to: "/backend-demo/memberships", label: "Administrasi Akses Lokasi" },
   { to: "/backend-operations", label: "Operasi P1 (kandidat)" },
   { to: "/backend-production", label: "Produksi (kandidat)" },
   { to: "/backend-distribution", label: "Distribusi (kandidat)" },
