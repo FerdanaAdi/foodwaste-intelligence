@@ -9,7 +9,7 @@ because cost ownership, price source rights and allocation policy are OPEN
 Recommendations are structural, deterministic and value-free; they never touch
 safety, serving, nutrition, procurement or rescue records (P2-AC-07/08).
 """
-from datetime import datetime, timezone
+from datetime import datetime, time, timezone
 from types import SimpleNamespace
 
 from sqlalchemy import select
@@ -200,13 +200,24 @@ def evaluate_recommendations(factory, site_id, access=None, intent=None):
                 'alerts': stored, 'insufficient': insufficient, 'note': _RECOMMENDATION_NOTE}
 
 
-def read_recommendations(factory, site_id, access=None, intent=None):
+def read_recommendations(factory, site_id, access=None, intent=None, *, recorded_from=None, recorded_to=None, state=None, rule_version=None):
     with unit(factory, access) as session:
         if access:
             security.permit(access, site_id, 'alert.read', conceal=True)
-        records = session.scalars(select(P2Recommendation).where(P2Recommendation.site_id == site_id)
-                                  .order_by(P2Recommendation.recorded_at, P2Recommendation.recommendation_id)
-                                  .limit(_BOUND)).all()
+        if recorded_from and recorded_to and recorded_from > recorded_to:
+            raise ValueError('recorded_from must not be after recorded_to')
+        query = select(P2Recommendation).where(P2Recommendation.site_id == site_id)
+        if recorded_from:
+            query = query.where(P2Recommendation.recorded_at >= datetime.combine(recorded_from, time.min, timezone.utc))
+        if recorded_to:
+            end = datetime.combine(recorded_to, time.max, timezone.utc)
+            query = query.where(P2Recommendation.recorded_at <= end)
+        if state:
+            query = query.where(P2Recommendation.state == state)
+        if rule_version:
+            query = query.where(P2Recommendation.rule_version == rule_version)
+        records = session.scalars(query.order_by(P2Recommendation.recorded_at.desc(),
+                                              P2Recommendation.recommendation_id).limit(_BOUND)).all()
         return [_snapshot(record) for record in records]
 
 
@@ -218,6 +229,11 @@ def acknowledge_recommendation(factory, recommendation_id, values, access=None, 
         if access:
             security.permit(access, record.site_id, 'alert.ack', conceal=True)
             security.consume_intent(access, intent, 'p1', record.site_id)
+        record = session.scalar(select(P2Recommendation).where(
+            P2Recommendation.recommendation_id == recommendation_id,
+        ).with_for_update().execution_options(populate_existing=True))
+        if record is None:
+            raise NotFound('recommendation not found')
         if record.state != 'open':
             raise ValueError('only an open recommendation can be acknowledged or dismissed')
         if values['state'] not in {'acknowledged', 'dismissed'}:

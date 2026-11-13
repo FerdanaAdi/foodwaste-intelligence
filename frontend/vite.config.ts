@@ -29,6 +29,7 @@ const EXPORT = "/demo/v0.1/export";
 const QUERY_KEYS: Record<string, string[]> = {
   ["/auth/memberships"]: ["site_id"],
   [LEDGER_LIST]: ["site_id", "event_type", "stage_code", "operation_date_from", "operation_date_to", "page", "page_size"],
+  ["/p2/v0.1/recommendations"]: ["site_id", "recorded_from", "recorded_to", "state", "rule_version"],
   [DATA_QUALITY]: ["site_id", "stage_code", "operation_date_from", "operation_date_to"],
   [MASTER_REFERENCES]: ["namespace", "include_inactive"],
   [MASTER_HISTORY]: ["namespace", "code"],
@@ -71,7 +72,7 @@ export default defineConfig({
         const isP1Post = P1_POST.test(request.url) || P2_POST.test(request.url);
         const isEvent = EVENT.test(route);
         const isHistory = MEASUREMENTS.test(route);
-        const scopedGet = [LEDGER_LIST, DATA_QUALITY, MASTER_NAMESPACES, MASTER_REFERENCES, MASTER_HISTORY, EVIDENCE, REVIEWS, EXPORT];
+        const scopedGet = ["/p2/v0.1/recommendations", LEDGER_LIST, DATA_QUALITY, MASTER_NAMESPACES, MASTER_REFERENCES, MASTER_HISTORY, EVIDENCE, REVIEWS, EXPORT];
         const scopedPost = [EVIDENCE, REVIEWS];
         const method = request.method;
         const allowed = method === "GET" ? (EVIDENCE_CONTENT.test(route) || route === "/demo/v0.1/administration" || isP1Get || isEvent || isHistory || ['/auth/preauth','/auth/session','/auth/intents','/auth/memberships', ...scopedGet].includes(route))

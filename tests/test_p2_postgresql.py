@@ -178,6 +178,15 @@ def test_recommendations_evaluate_acknowledge_and_never_mutate_operations(databa
                           SITE_A)
             assert ack.status_code == 200, ack.text
             assert ack.json()['state'] == 'acknowledged'
+            duplicate = p1_post(client, f"/p2/v0.1/recommendations/{target['recommendation_id']}/acknowledge",
+                                dict(state='dismissed', reason='must not overwrite the first acknowledgement'), SITE_A)
+            assert duplicate.status_code == 422
+            from fwi.infrastructure.database.models import AuditEvent
+            from uuid import UUID
+            with database() as session:
+                audit = session.scalars(select(AuditEvent).where(AuditEvent.entity_type == 'p2_recommendations',
+                    AuditEvent.entity_id == UUID(target['recommendation_id']))).all()
+                assert [(entry.action, str(entry.actor_principal_id)) for entry in audit] == [('acknowledged', ack.json()['ack_actor'])]
             third = p1_post(client, '/p2/v0.1/recommendations/evaluate?site_id=' + SITE_A, {}, SITE_A).json()
             assert len(third['alerts']) == 3  # acknowledged row persists, never regenerated
             assert next(a for a in third['alerts']
@@ -231,5 +240,46 @@ def test_missing_reference_yields_insufficient_data_not_a_claim(database):  # P2
             with database() as session:
                 assert session.scalar(select(func.count()).select_from(P2Recommendation).where(
                     P2Recommendation.rule_code == 'allocation_exceeds_reference')) == 0
+    finally:
+        app.state.session_factory.kw['bind'].dispose()
+
+
+def test_recommendation_filters_use_utc_recorded_date_state_and_authorized_site(database):
+    from datetime import datetime
+    from uuid import uuid4
+    from fwi.infrastructure.database.models_p1 import P2Recommendation
+
+    app = create_app()
+    try:
+        with TestClient(app) as client:
+            with database() as session, session.begin():
+                rows = []
+                for site, stamp, state in [
+                    (SITE_ID, '2026-11-12T23:59:59.999999Z', 'open'),
+                    (SITE_ID, '2026-11-13T00:00:00Z', 'open'),
+                    (SITE_ID, '2026-11-13T23:59:59.999999Z', 'acknowledged'),
+                    (SITE_ID, '2026-11-14T00:00:00Z', 'open'),
+                    (SITE_B, '2026-11-13T00:00:00Z', 'open'),
+                ]:
+                    row = P2Recommendation(organization_id=ORGANIZATION_ID, site_id=site,
+                        rule_code='synthetic_rule', rule_version='synthetic-v1', target_type='delivery',
+                        target_ref=uuid4(), detected_issue='synthetic fixture', coverage='partial',
+                        recommended_action='review source record', state=state, recorded_at=datetime.fromisoformat(stamp))
+                    session.add(row)
+                    rows.append(row)
+                session.flush()
+                expected = [str(rows[2].recommendation_id), str(rows[1].recommendation_id)]
+            path = '/p2/v0.1/recommendations'
+            params = dict(site_id=SITE_A, recorded_from='2026-11-13', recorded_to='2026-11-13')
+            response = client.get(path, params=params)
+            assert response.status_code == 200
+            assert [row['recommendation_id'] for row in response.json()] == expected
+            assert all(row['rule_version'] == 'synthetic-v1' and row['site_id'] == SITE_A for row in response.json())
+            assert [row['recommendation_id'] for row in client.get(path, params={**params, 'state':'open'}).json()] == expected[1:]
+            assert len(client.get(path, params={**params, 'rule_version':'synthetic-v1'}).json()) == 2
+            assert client.get(path, params={**params, 'rule_version':'synthetic-v2'}).json() == []
+            assert client.get(path, params={**params, 'site_id':SITE_B_ID}).status_code == 404
+            assert client.get(path, params={**params, 'recorded_from':'2026-11-14'}).status_code == 422
+            assert client.get(path, params={**params, 'state':'invalid'}).status_code == 422
     finally:
         app.state.session_factory.kw['bind'].dispose()

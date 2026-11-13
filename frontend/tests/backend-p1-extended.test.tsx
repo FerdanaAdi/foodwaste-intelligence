@@ -117,7 +117,7 @@ beforeEach(() => {
     { rule_code: "delivery_reconciliation_review", description: "difference needs review", disabled: false },
     { rule_code: "event_coverage_insufficient", description: "coverage insufficient", disabled: true },
   ]);
-  evaluateRecommendations.mockResolvedValue({ kind: "saved", value: { site_id: SITE,
+  const evaluated = { kind: "saved", value: { site_id: SITE,
     rule_version: "p2-rules-provisional-v0",
     alerts: [{ recommendation_id: REC_ID, organization_id: ORG, site_id: SITE,
       rule_code: "delivery_reconciliation_review", rule_version: "p2-rules-provisional-v0",
@@ -128,7 +128,9 @@ beforeEach(() => {
       recorded_at: "2026-11-09T00:00:00+08:00" }],
     insufficient: [{ rule_code: "allocation_exceeds_reference", target_type: "disposition",
       target_ref: BATCH_ID, reason: "no compatible reference measurement exists", state: "insufficient_data" }],
-    note: "recommendations are explanations with provenance only" } });
+    note: "recommendations are explanations with provenance only" } };
+  evaluateRecommendations.mockResolvedValue(evaluated);
+  readRecommendations.mockResolvedValue(evaluated.value.alerts);
   acknowledgeBackendRecommendation.mockResolvedValue({ kind: "saved", value: {
     recommendation_id: REC_ID, organization_id: ORG, site_id: SITE,
     rule_code: "delivery_reconciliation_review", rule_version: "p2-rules-provisional-v0",
@@ -192,7 +194,7 @@ describe("BackendDistributionPage (FR-103)", () => {
 
 describe("BackendInsightsPage (FR-203/204)", () => {
   it("stores a missing price as N/A and shows the blocked valuation", async () => {
-    render(<BackendInsightsPage />);
+    render(<MemoryRouter><BackendInsightsPage /></MemoryRouter>);
     const user = userEvent.setup();
     await user.type(screen.getByLabelText(/UUID scope/i), BATCH_ID);
     await user.type(screen.getByLabelText(/Sumber harga/i), "SYN-PRICE-A");
@@ -203,22 +205,26 @@ describe("BackendInsightsPage (FR-203/204)", () => {
   });
 
   it("renders open alerts, insufficient-data outcomes, and records acknowledgement", async () => {
-    render(<BackendInsightsPage />);
+    render(<MemoryRouter><BackendInsightsPage /></MemoryRouter>);
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: /Evaluasi rekomendasi/i }));
     expect(await screen.findByText(/dispatched and received quantities differ/)).toBeInTheDocument();
     expect(screen.getByText(/insufficient_data/)).toBeInTheDocument();
     expect(screen.getByText(/FWI never applies an automatic change/)).toBeInTheDocument();
-    await user.type(screen.getByLabelText(/UUID rekomendasi/i), REC_ID);
+    await user.selectOptions(screen.getByLabelText('Status alert'), 'open');
+    await user.click(screen.getByRole('button', {name: 'Terapkan filter alert'}));
+    await waitFor(() => expect(readRecommendations).toHaveBeenLastCalledWith(SITE, expect.any(AbortSignal), {state:'open'}));
+    await user.click(await screen.findByRole('button', {name: 'Pilih alert ini'}));
     await user.type(screen.getByLabelText(/Alasan/i), "reviewed with the site team");
     await user.click(screen.getByRole("button", { name: /Catat tindakan/i }));
     await waitFor(() => expect(acknowledgeBackendRecommendation).toHaveBeenCalledWith(REC_ID,
       { state: "acknowledged", reason: "reviewed with the site team" }));
     expect(await screen.findByText(/acknowledged dengan alasan tercatat/i)).toBeInTheDocument();
+    expect(evaluateRecommendations).toHaveBeenCalledTimes(1);
   });
 
   it("renders global rules read-only without any mutation control (T-06/T-08)", async () => {
-    render(<BackendInsightsPage />);
+    render(<MemoryRouter><BackendInsightsPage /></MemoryRouter>);
     expect(await screen.findByText(/event_coverage_insufficient/)).toBeInTheDocument();
     expect(screen.getByText(/read-only/i)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Aktifkan" })).not.toBeInTheDocument();

@@ -3,10 +3,12 @@
 Every response is value-free by construction; HELD codes are disabled on every
 path. Route shapes are PROPOSED.
 """
+from datetime import date
 from decimal import Decimal
+from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from fwi.api import schemas_p2 as schemas
@@ -64,8 +66,12 @@ def cost_valuation(cost_reference_id: UUID, request: Request):
 
 
 @router.get('/recommendations', response_model=list[schemas.RecommendationOutput])
-def read_recommendations(site_id: UUID, request: Request):
-    return invoke(request, p2.read_recommendations, site_id)
+def read_recommendations(site_id: UUID, request: Request, recorded_from: date | None = None,
+                         recorded_to: date | None = None,
+                         state: Literal['open', 'acknowledged', 'dismissed'] | None = None,
+                         rule_version: str | None = Query(default=None, min_length=1, max_length=40)):
+    return invoke(request, p2.read_recommendations, site_id, recorded_from=recorded_from,
+                  recorded_to=recorded_to, state=state, rule_version=rule_version)
 
 
 @router.post('/recommendations/evaluate', response_model=schemas.EvaluateView)

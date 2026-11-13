@@ -605,3 +605,62 @@ test('M3-02: stage-scoped CSV/JSON downloads invalidate old results and keep sou
   await testInfo.attach('m3-export-stage-evidence', { body: JSON.stringify({ matched, otherStage, otherDate,
     verified, records_unchanged: true }), contentType: 'application/json' });
 });
+
+test('M5 alerts: persisted site history, UTC/status filters and one audited acknowledgement', async ({ page, backend }) => {
+  const api = async (path, data, site) => {
+    const session = await (await page.request.get('/auth/session', {headers:{Origin:ORIGIN}})).json();
+    const headers = {Origin:ORIGIN, 'x-csrf-token':session.csrf_token};
+    const registered = await page.request.post('/auth/intents', {headers, data:{site_id:site,kind:'p1'}});
+    expect(registered.status()).toBe(201);
+    return page.request.post(path, {headers:{...headers,'x-fwi-intent':(await registered.json()).intent_id},data});
+  };
+  const switchTo = async role => {
+    await Promise.all([page.waitForResponse(r => r.url().endsWith('/auth/logout') && r.status() === 200),page.getByRole('button',{name:'Keluar',exact:true}).click()]);
+    await login(page,backend,role);
+  };
+  const created = await api('/p1/v0.1/deliveries', {organization_id:'11111111-1111-4111-8111-111111111111',site_id:SITE_A,from_site_id:SITE_A,to_site_id:SITE_B,dispatch_quantity:'4',original_unit:'kg',mass_basis:'as_served',dispatched_at:'2026-11-13T08:00:00+08:00'}, SITE_A);
+  expect(created.status()).toBe(201);
+  const {delivery_id} = await created.json();
+  await switchTo('site_b_writer');
+  expect((await api(`/p1/v0.1/deliveries/${delivery_id}/receiving`, {received_quantity:'3',received_at:'2026-11-13T09:00:00+08:00'}, SITE_B)).status()).toBe(201);
+  await switchTo('site_a_writer');
+  await page.goto('/backend-insights');
+  await page.getByRole('button',{name:/Evaluasi rekomendasi/}).click();
+  const choose = page.getByRole('button',{name:'Pilih alert ini'});
+  await expect(choose).toHaveCount(1);
+  const alert = (await backend.snapshot()).data.p2_recommendations[0];
+  const date = new Date(alert.recorded_at.replace(' ','T')).toISOString().slice(0,10);
+  await page.getByLabel('Dari tanggal pencatatan (UTC)',{exact:true}).fill(date);
+  await page.getByLabel('Sampai tanggal pencatatan (UTC)',{exact:true}).fill(date);
+  await page.getByRole('combobox',{name:'Status alert'}).selectOption('open');
+  await page.getByLabel('Versi aturan sumber',{exact:true}).fill(alert.rule_version);
+  const filtered = page.waitForResponse(r => r.request().method()==='GET' && r.url().includes(`recorded_from=${date}`) && r.url().includes('state=open') && r.url().includes('rule_version='));
+  await page.getByRole('button',{name:'Terapkan filter alert'}).click();
+  expect((await filtered).status()).toBe(200);
+  await choose.click();
+  await page.getByLabel('Alasan (wajib, tercatat)').fill('Synthetic review');
+  await page.getByRole('button',{name:'Catat tindakan'}).click();
+  await expect(page.getByText(/acknowledged dengan alasan tercatat/)).toBeVisible();
+  await expect(choose).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByText('Alasan: Synthetic review')).toBeVisible();
+  const snapshot = await backend.snapshot();
+  expect(snapshot.operations.filter(row => row.path.endsWith('/recommendations/evaluate'))).toHaveLength(1);
+  expect(snapshot.data.p2_recommendations).toHaveLength(1);
+  expect(snapshot.data.p2_recommendations[0]).toMatchObject({state:'acknowledged',site_id:SITE_A});
+  const saved = snapshot.data.p2_recommendations[0];
+  expect(saved.ack_actor).toMatch(/^[0-9a-f-]{36}$/);
+  expect(snapshot.data.audit_events.filter(row => row.entity_type === 'p2_recommendations' && row.entity_id === saved.recommendation_id)).toEqual([
+    expect.objectContaining({action:'acknowledged',actor_principal_id:saved.ack_actor}),
+  ]);
+  expect(snapshot.counts.waste_events).toBe(0);
+  await switchTo('site_a_reader');
+  await page.goto('/backend-insights');
+  await expect(page.getByText('Alasan: Synthetic review')).toBeVisible();
+  await expect(page.getByRole('button',{name:/Evaluasi rekomendasi|Catat tindakan/})).toHaveCount(0);
+  await switchTo('site_b_writer');
+  await page.goto('/backend-insights');
+  await expect(page.getByText('Belum ada alert tersimpan untuk filter ini')).toBeVisible();
+  const foreign = await page.request.get(`/p2/v0.1/recommendations?site_id=${SITE_A}&state=acknowledged`,{headers:{Origin:ORIGIN}});
+  expect(foreign.status()).toBe(404);
+ });

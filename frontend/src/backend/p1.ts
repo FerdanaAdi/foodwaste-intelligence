@@ -698,10 +698,18 @@ export function readCostValuation(costReferenceId: string, signal?: AbortSignal)
     }, signal);
 }
 
-export function readRecommendations(siteId: string, signal?: AbortSignal): Promise<Recommendation[]> {
-  return readJson(`/p2/v0.1/recommendations?site_id=${encodeURIComponent(siteId)}`, value => {
+export type RecommendationFilters = { recorded_from?: string; recorded_to?: string; state?: string; rule_version?: string };
+
+export function readRecommendations(siteId: string, signal?: AbortSignal, filters: RecommendationFilters = {}): Promise<Recommendation[]> {
+  const query = new URLSearchParams({ site_id: siteId });
+  for (const key of ['recorded_from', 'recorded_to', 'state', 'rule_version'] as const) {
+    if (filters[key]) query.set(key, filters[key]);
+  }
+  return readJson(`/p2/v0.1/recommendations?${query}`, value => {
     requireValue(Array.isArray(value));
-    return value.map(parseRecommendation);
+    const rows = value.map(parseRecommendation);
+    requireValue(rows.every(row => row.site_id === siteId));
+    return rows;
   }, signal);
 }
 
@@ -715,7 +723,7 @@ export async function acknowledgeBackendRecommendation(recommendationId: string,
   state: 'acknowledged' | 'dismissed'; reason: string,
 }): Promise<WriteResult<Recommendation>> {
   return p1PostOnce(`/p2/v0.1/recommendations/${encodeURIComponent(recommendationId)}/acknowledge`,
-    'alert.ack', { ...input }, parseRecommendation);
+    'alert.ack', { ...input }, parseRecommendation, null, 200);
 }
 
 export function readAlertRules(signal?: AbortSignal): Promise<AlertRule[]> {
