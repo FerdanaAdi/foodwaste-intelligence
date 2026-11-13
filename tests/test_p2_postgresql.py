@@ -32,8 +32,10 @@ def test_held_codes_return_no_numeric_result(database):  # P2-AC-01
         with TestClient(app) as client:
             catalogue = client.get('/p2/v0.1/kpi').json()
             codes = {entry['kpi_code']: entry['design_status'] for entry in catalogue}
-            assert codes == {'OP-03': 'design_pass', 'OP-04': 'design_pass', 'OP-10': 'design_pass',
-                             'OP-08': 'held', 'FI-02': 'held', 'NI-03': 'held'}
+            assert len(codes) == 24
+            assert {k for k,v in codes.items() if v == 'design_pass'} == {'OP-03','OP-04','OP-10'}
+            assert {k for k,v in codes.items() if v == 'held'} == {'OP-08','FI-02','NI-03'}
+            assert sum(v == 'conditional' for v in codes.values()) == 18
             for code in ('OP-08', 'FI-02', 'NI-03'):
                 preview = client.get(f'/p2/v0.1/kpi/{code}/preview')
                 assert preview.status_code == 200

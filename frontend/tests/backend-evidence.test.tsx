@@ -75,10 +75,10 @@ it('UX02C payload: complete evidence input is identical to the pre-copy contract
  const posts=fetchMock.mock.calls.filter(c=>c[1]?.method==='POST');expect(posts).toHaveLength(1);
  expect(JSON.parse(posts[0][1]!.body as string)).toEqual({target_kind:'event',target_id:EVENT_ID,kind:'reference',source:'synthetic_note',title:'Catatan uji',recorded_at:'2026-11-04T07:10:00+08:00',availability:'unknown',verification:'unverified'});
 });
-it('UX02C presentation does not imply upload or turn unknown availability into available', async () => {
+it('metadata form does not imply a stored file or turn unknown availability into available', async () => {
  const user=userEvent.setup();vi.stubGlobal('fetch',vi.fn(async()=>response([record])));mount();
  expect(screen.getByRole('heading',{name:'Informasi Bukti Pendukung'})).toBeVisible();
- expect(screen.getByText(/^Yang disimpan adalah informasi tentang bukti/)).toBeVisible();
+ expect(screen.getByText(/^Formulir metadata menyimpan informasi tentang bukti/)).toBeVisible();
  const availability=screen.getByLabelText('Ketersediaan');expect(availability).toHaveValue('unknown');
  expect(availability.querySelector('option[value="unknown"]')).toHaveTextContent('Belum diketahui');
  await query(user);expect(await screen.findByText(/ketersediaan: Belum diketahui/)).toBeVisible();

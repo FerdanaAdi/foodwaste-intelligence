@@ -139,6 +139,9 @@ def schema_connection(engine, schema):
 def config_for(connection):
     config = Config(str(ROOT / 'alembic.ini'))
     config.attributes['connection'] = connection
+    from fwi.infrastructure.database.migration_safety import disposable_downgrade_permit
+    config.attributes['fwi_disposable_downgrade'] = disposable_downgrade_permit(
+        connection, connection.scalar(text('SELECT current_schema()')), connection.engine._fwi_created_schema_oid)
     return config
 
 
@@ -304,7 +307,7 @@ def test_downgrade_failure_after_real_drop_rolls_back_entire_schema(empty_auth_s
 def test_auth_0007_downgrade_refuses_without_schema_or_data_changes(empty_auth_schema, with_security_evidence):
     engine, schema = empty_auth_schema
     with schema_connection(engine, schema) as connection:
-        command.upgrade(config_for(connection), 'head')
+        command.upgrade(config_for(connection), 'auth_0007')
         assert connection.scalar(text('SELECT version_num FROM alembic_version')) == 'auth_0007'
         if with_security_evidence:
             connection.execute(INSERT_PREAUTH, PARAMS)

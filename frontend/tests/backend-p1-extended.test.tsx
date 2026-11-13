@@ -1,4 +1,5 @@
 /** Candidate FR-102/103/104/203/204 pages: blocked yield, review-not-waste, N/A price, non-autonomous alerts. */
+import { MemoryRouter } from "react-router";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -139,7 +140,7 @@ beforeEach(() => {
 
 describe("BackendProductionPage (FR-102/104)", () => {
   it("shows the blocked yield reason instead of an invented factor", async () => {
-    render(<BackendProductionPage />);
+    render(<MemoryRouter><BackendProductionPage /></MemoryRouter>);
     await userEvent.setup().type(screen.getByLabelText(/UUID resep/i), BATCH_ID);
     await userEvent.setup().click(screen.getByRole("button", { name: /Buat batch/i }));
     expect(await screen.findByText(/yield:/i)).toBeInTheDocument();
@@ -148,7 +149,7 @@ describe("BackendProductionPage (FR-102/104)", () => {
   });
 
   it("records a menu through the intent write path", async () => {
-    render(<BackendProductionPage />);
+    render(<MemoryRouter><BackendProductionPage /></MemoryRouter>);
     const user = userEvent.setup();
     await user.type(screen.getByLabelText(/Kode menu/i), "MENU-SYN-1");
     await user.type(screen.getByLabelText(/^Nama/i), "Menu sintetis");

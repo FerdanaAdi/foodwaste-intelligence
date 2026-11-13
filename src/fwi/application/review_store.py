@@ -73,8 +73,10 @@ def _serialize_decision(row) -> dict:
             'recorded_at_system': row.recorded_at_system.isoformat()}
 
 
-def _serialize_proposal(row) -> dict:
-    return {'correction_record_id': str(row.correction_record_id), 'target_kind': row.target_kind,
+def _serialize_proposal(row, session) -> dict:
+    from fwi.infrastructure.database.models import ProposalApproval
+    approval=session.scalar(select(ProposalApproval).where(ProposalApproval.correction_record_id==row.correction_record_id))
+    return {'proposal_version':1,'approval_revision':1 if approval else 0, 'approval_status':'approved_prototype' if approval else 'unreviewed','applied':False,'correction_record_id': str(row.correction_record_id), 'target_kind': row.target_kind,
             'target_id': str(row.target_id), 'original_values': row.original_values,
             'proposed_values': row.proposed_values, 'actor_id': row.actor_id,
             'recorded_at': row.recorded_at.isoformat(), 'reason': row.reason,
@@ -137,7 +139,7 @@ def submit_review(factory, values: dict, access=None, intent=None) -> dict:
                 state='proposed', recorded_at_system=instant)
             session.add(proposal)
             session.flush()
-            result['correction_proposal'] = _serialize_proposal(proposal)
+            result['correction_proposal'] = _serialize_proposal(proposal, session)
         security.security_audit(session, access.principal.principal_id if access else None,
             'review_decisions', row.review_decision_id, 'created', decision.rationale)
         session.flush()
@@ -161,4 +163,4 @@ def read_review_history(factory, target_kind: str, target_id: UUID, access=None,
             .order_by(CorrectionProposal.recorded_at_system, CorrectionProposal.correction_record_id))
         return {'target_kind': target_kind, 'target_id': str(target_id),
                 'decisions': [_serialize_decision(row) for row in decisions],
-                'proposals': [_serialize_proposal(row) for row in proposals]}
+                'proposals': [_serialize_proposal(row, session) for row in proposals]}

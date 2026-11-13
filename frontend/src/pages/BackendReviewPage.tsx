@@ -1,3 +1,4 @@
+import { ProposalApprovalPanel } from "@/components/operational/CompletionTools";
 import { useState, useEffect, useRef } from "react";
 import { readBackendReviews, submitBackendReview, reviewInputErrors,
          readReviewPending,
@@ -160,6 +161,7 @@ function ContextReviewPage() {
         </li>)}
         {history.proposals.map(row => <li key={row.correction_record_id} className="rounded border bg-white p-3 text-sm">
           <p className="font-semibold">Usulan tersimpan — {row.state === "proposed" ? "Belum diterapkan pada catatan asli" : "Lihat status sumber pada Detail Teknis"}</p>
+          <ProposalApprovalPanel identifier={row.correction_record_id} actor={row.actor_id} revision={row.approval_revision ?? 0} status={row.approval_status ?? "unreviewed"} />
           <TechnicalDetails><p>ID usulan: {row.correction_record_id}</p><p>Kode status usulan: {row.state} (PROVISIONAL)</p></TechnicalDetails><div className="ux-comparison"><div><h3>Catatan asli · tidak berubah</h3><ReviewValues values={row.original_values} /></div><div><h3>Usulan perbaikan · belum diterapkan</h3><ReviewValues values={row.proposed_values} /></div></div>
         </li>)}
       </ul>

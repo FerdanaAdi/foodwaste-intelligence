@@ -323,8 +323,13 @@ async function p1PostOnce<T>(path: string, permission: string, body: Record<stri
                              parse: (value: unknown) => T, eventId: string | null = null,
                              expectedStatus = 201): Promise<WriteResult<T>> {
   const auth = authSnapshot();
-  if (!permits(permission) || body.site_id !== auth.site)
+  if (!permits(permission) || (body.site_id !== undefined && body.site_id !== auth.site))
     return { kind: 'rejected', message: 'Tidak ada izin untuk operasi/site aktif.' };
+  const journalKey = `fwi-p1-pending:${auth.session!.principal_id}:${auth.site}:${path}`;
+  try {
+    if (sessionStorage.getItem(journalKey)) return {kind:'unknown',message:'Operasi pada target ini belum terkonfirmasi; jangan kirim ulang.'};
+    sessionStorage.setItem(journalKey,'pending');
+  } catch { return {kind:'unknown',message:'Penyimpanan pengaman tidak tersedia; POST tidak dikirim.'}; }
   try {
     const registration = await protectedJson('/auth/intents', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -342,13 +347,16 @@ async function p1PostOnce<T>(path: string, permission: string, body: Record<stri
     });
     assertCurrent(auth);
     if ([400, 404, 409, 422].includes(response.status)) {
+      sessionStorage.removeItem(journalKey);
       const detail = recordOf(raw).detail;
       return { kind: 'rejected', message: `Server menolak operasi (HTTP ${response.status}): ` +
         (typeof detail === 'string' && detail ? detail : STATUS_DETAIL[response.status] ?? 'periksa input.') };
     }
     if (response.status !== expectedStatus)
       return { kind: 'unknown', message: `HTTP ${response.status}; hasil commit tidak dapat dipastikan. Jangan kirim ulang.` };
-    try { return { kind: 'saved', value: parse(raw) }; }
+    try { const value = parse(raw);
+    sessionStorage.removeItem(journalKey);
+    return { kind: 'saved', value }; }
     catch { return { kind: 'unknown', message: 'Respons sukses tidak valid; hasil commit belum dapat dipastikan.' }; }
   } catch {
     return { kind: 'unknown', message: 'Respons POST tidak diterima (jaringan/timeout); mungkin sudah commit. Jangan kirim ulang.' };
@@ -708,4 +716,14 @@ export async function acknowledgeBackendRecommendation(recommendationId: string,
 
 export function readAlertRules(signal?: AbortSignal): Promise<AlertRule[]> {
   return readJson('/p2/v0.1/recommendations/rules', parseAlertRules, signal);
+}
+
+export function readReceiptLots(receiptId: string, signal?: AbortSignal): Promise<Lot[]> {
+  if (!isUUID(receiptId)) return Promise.reject(new Error('Identitas penerimaan tidak valid.'));
+  const site=authSnapshot().site;
+  return readJson(`/p1/v0.1/receipts/${receiptId}/lots`,raw => {
+    requireValue(Array.isArray(raw)); const ids=new Set<string>();
+    return raw.map(item => {const row=parseReceiptLot(item);
+      requireValue(row.receipt_id===receiptId && row.site_id===site && !ids.has(row.lot_id));ids.add(row.lot_id);return row;});
+  },signal);
 }

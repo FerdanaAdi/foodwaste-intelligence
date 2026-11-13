@@ -34,7 +34,10 @@ class WasteEvent(Base):
     __tablename__ = "waste_events"
     __table_args__ = (ForeignKeyConstraint(
         ["site_id", "organization_id"], ["sites.site_id", "sites.organization_id"]),
-        CheckConstraint("event_type IN ('at_risk_surplus', 'actual_loss_discard')", name="event_demo_type"))
+        CheckConstraint("event_type IN ('at_risk_surplus', 'actual_loss_discard')", name="event_demo_type"),
+        CheckConstraint("regulatory_scope_status IS NULL OR regulatory_scope_status = 'pending_assessment'", name="event_regulatory_pending"),
+        CheckConstraint("edibility_status IS NULL OR edibility_status IN ('edible','inedible','mixed','unknown')", name="event_edibility_source"),
+        CheckConstraint("(regulatory_scope_status IS NULL AND edibility_status IS NULL) OR (classification_source IS NOT NULL AND length(trim(classification_source)) > 0)", name="event_classification_source"))
     event_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     organization_id: Mapped[UUID] = mapped_column(ForeignKey("organizations.organization_id"))
     site_id: Mapped[UUID] = mapped_column(Uuid)
@@ -42,6 +45,9 @@ class WasteEvent(Base):
     stage_code: Mapped[str | None] = mapped_column(String)
     process_step: Mapped[str | None] = mapped_column(String)
     operation_date: Mapped[date | None] = mapped_column(Date)
+    regulatory_scope_status: Mapped[str | None] = mapped_column(String)
+    edibility_status: Mapped[str | None] = mapped_column(String)
+    classification_source: Mapped[str | None] = mapped_column(String)
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
@@ -272,5 +278,49 @@ class MembershipChange(Base):
     old_active: Mapped[bool | None] = mapped_column(Boolean)
     new_role: Mapped[str] = mapped_column(String)
     new_active: Mapped[bool] = mapped_column(Boolean)
+    reason: Mapped[str] = mapped_column(String)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class MasterNamespaceApproval(Base):
+    __tablename__ = 'auth_master_namespaces'
+    namespace: Mapped[str] = mapped_column(String, primary_key=True)
+    source_ref: Mapped[str] = mapped_column(String)
+
+
+class MasterAdministration(Base):
+    __tablename__ = 'auth_master_grants'
+    principal_id: Mapped[UUID] = mapped_column(ForeignKey('auth_principals.principal_id'), primary_key=True)
+    namespace: Mapped[str] = mapped_column(ForeignKey('auth_master_namespaces.namespace'), primary_key=True)
+
+
+class ReviewAuthority(Base):
+    __tablename__ = 'auth_review_grants'
+    principal_id: Mapped[UUID] = mapped_column(ForeignKey('auth_principals.principal_id'), primary_key=True)
+    site_id: Mapped[UUID] = mapped_column(ForeignKey('sites.site_id'), primary_key=True)
+
+
+class EvidenceFile(Base):
+    __tablename__ = 'evidence_files'
+    __table_args__ = (CheckConstraint("size_bytes > 0 AND size_bytes <= 10485760",name='evidence_file_size'),
+        CheckConstraint("media_type IN ('application/pdf','image/jpeg','image/png')",name='evidence_file_type'))
+    evidence_id: Mapped[UUID] = mapped_column(ForeignKey('evidence_references.evidence_id'), primary_key=True)
+    file_id: Mapped[UUID] = mapped_column(Uuid, default=uuid4, unique=True)
+    sha256: Mapped[str] = mapped_column(String(64))
+    size_bytes: Mapped[int] = mapped_column(Integer)
+    media_type: Mapped[str] = mapped_column(String)
+    actor_id: Mapped[UUID] = mapped_column(ForeignKey('auth_principals.principal_id'))
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class ProposalApproval(Base):
+    __tablename__ = 'proposal_approvals'
+    __table_args__ = (UniqueConstraint('correction_record_id'),
+        CheckConstraint('proposal_version = 1 AND decision_revision = 1',name='proposal_approval_revision'))
+    approval_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    correction_record_id: Mapped[UUID] = mapped_column(ForeignKey('correction_proposals.correction_record_id'))
+    proposal_version: Mapped[int] = mapped_column(Integer)
+    decision_revision: Mapped[int] = mapped_column(Integer)
+    actor_id: Mapped[UUID] = mapped_column(ForeignKey('auth_principals.principal_id'))
     reason: Mapped[str] = mapped_column(String)
     recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

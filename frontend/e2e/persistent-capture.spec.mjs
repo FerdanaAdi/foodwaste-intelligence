@@ -56,7 +56,7 @@ const test = base.extend({
       expect(identity.identity.database).toBe('fwi_demo_test');
       expect(identity.identity.version).toContain('PostgreSQL 18.');
       expect(identity.schema).toMatch(/^fwi_demo_test_[0-9a-f]{32}$/);
-      expect(identity.revision).toBe('auth_0007');
+      expect(identity.revision).toBe('p0_0008');
       const snapshot = () => send('snapshot');
       await testInfo.attach('isolated-postgresql-identity', { body: JSON.stringify(identity, null, 2), contentType: 'application/json' });
       const baseline = await snapshot();

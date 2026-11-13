@@ -1,3 +1,4 @@
+import { EvidenceFilePanel } from "@/components/operational/CompletionTools";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { listBackendEvidence, createBackendEvidence, evidenceInputErrors,
          readEvidencePending,
@@ -68,7 +69,7 @@ export default function BackendEvidencePage() {
   return <div className="space-y-6">
     <header className="space-y-2">
       <h1 className="text-2xl font-bold">Informasi Bukti Pendukung</h1>
-      <p>Yang disimpan adalah informasi tentang bukti, bukan berkas fisik. Unggah dan unduh berkas belum tersedia. Catatan hanya dapat diakses sesuai izin lokasi.</p>
+      <p>Formulir metadata menyimpan informasi tentang bukti. Berkas PDF/JPEG/PNG sintetis dapat diunggah terpisah pada lampiran melalui penyimpanan privat yang telah dikonfigurasi. Semua akses mengikuti izin lokasi.</p>
       <p className="text-sm text-slate-600">Ketersediaan “Belum diketahui” tidak berarti bukti tersedia. Pemeriksaan bukti bukan persetujuan hasil pengukuran.</p>
     </header>
 
@@ -95,6 +96,7 @@ export default function BackendEvidencePage() {
       <ul className="space-y-2">
         {records.map(row => <li key={row.evidence_id} className="rounded border bg-white p-3 text-sm">
           <p className="font-semibold">{row.title}</p>
+          {row.kind === "attachment" && <EvidenceFilePanel identifier={row.evidence_id} />}
           <p>{kindLabels[row.kind] || 'Jenis lain dari sumber'} · sumber: {row.source} · ketersediaan: {availabilityLabels[row.availability] || 'Status lain dari sumber'} · pemeriksaan: {verificationLabels[row.verification] || 'Status lain dari sumber'}</p>
           <p className="text-slate-600">Dicatat pada {row.recorded_at}{row.note ? ` · ${row.note}` : ""}</p><TechnicalDetails><p>ID bukti: {row.evidence_id}</p><p>Pencatat: {row.recorded_by}</p><p>Kode jenis: {row.kind} · ketersediaan: {row.availability} · pemeriksaan: {row.verification}</p></TechnicalDetails>
         </li>)}

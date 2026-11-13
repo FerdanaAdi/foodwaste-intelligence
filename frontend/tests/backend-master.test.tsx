@@ -57,3 +57,14 @@ describe("FR-002 backend master page", () => {
     expect(screen.queryByText("synthetic_stage_example")).not.toBeInTheDocument();
   });
 });
+
+it('reads complete version history and sends supported inactive/namespace filters',async()=>{
+ const user=userEvent.setup();const old={...references[0],reference_id:'55555555-5555-4555-8555-555555555552',version:1,status:'active',supersedes_version:null,label:'Version1 original'};
+ const calls=vi.fn(async(url:string)=>response(url.endsWith('namespaces')?namespaces:url.includes('/history?')?{namespace:old.namespace,code:old.code,versions:[old,references[0]]}:references));
+ vi.stubGlobal('fetch',calls);mount();await screen.findByText(/Registry kosong untuk filter ini/);
+ await user.click(screen.getByRole('checkbox'));await user.click(await screen.findByRole('button',{name:/Lihat riwayat stage/}));
+ expect(await screen.findByText('Versi 1: Version1 original')).toBeInTheDocument();
+ expect(screen.getByText('Versi 2: Contoh tahap sintetis v2')).toBeInTheDocument();
+ expect(calls.mock.calls.some(c=>c[0].includes('include_inactive=true'))).toBe(true);
+ expect(calls.mock.calls.some(c=>c[0].includes('/history?namespace=stage&code=synthetic_stage_example'))).toBe(true);
+});

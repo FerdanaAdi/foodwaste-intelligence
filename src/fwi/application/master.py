@@ -11,6 +11,7 @@ Wraps the pure :mod:`fwi.domain.references` core with PostgreSQL rows.
 """
 
 from datetime import datetime, timezone
+from fwi.application.demo import unit
 from uuid import UUID, uuid4
 
 from sqlalchemy import select
@@ -35,10 +36,10 @@ def _record_from_row(row) -> tuple[ReferenceRecord, dict]:
     return record, snapshot
 
 
-def load_registry(factory) -> ReferenceRegistry:
+def load_registry(factory, access=None) -> ReferenceRegistry:
     """Rebuild the in-memory registry from persisted, append-only versions."""
     registry = ReferenceRegistry()
-    with factory() as session:
+    with unit(factory, access) as session:
         rows = session.scalars(select(MasterReference).order_by(
             MasterReference.namespace, MasterReference.code, MasterReference.version))
         for row in rows:
@@ -51,10 +52,10 @@ def load_registry(factory) -> ReferenceRegistry:
     return registry
 
 
-def insert_reference(factory, values: dict) -> dict:
+def insert_reference(factory, values: dict, access=None) -> dict:
     """Trusted-fixture persistence path; no HTTP route activates this in the P0 slice."""
     record_values = dict(values)
-    registry = load_registry(factory)
+    registry = load_registry(factory, access=access)
     key = ReferenceKey(namespace=record_values['namespace'], code=record_values['code'])
     ownership = ChangeOwnership(changed_by=record_values['changed_by'],
                                 changed_at=record_values['changed_at'], note=record_values.get('note'))
@@ -67,7 +68,8 @@ def insert_reference(factory, values: dict) -> dict:
             status=record_values.get('status', 'active'), label=record_values['label'],
             ownership=ownership, definition=record_values.get('definition'),
             supersedes_version=record_values.get('supersedes_version')))
-    with factory() as session, session.begin():
+    from fwi.application.demo import unit
+    with unit(factory, access) as session:
         row = MasterReference(reference_id=uuid4(), namespace=record.key.namespace, code=record.key.code,
                               version=record.version, status=record.status, label=record.label,
                               definition=record.definition, supersedes_version=record.supersedes_version,

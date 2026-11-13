@@ -14,7 +14,7 @@ export const test = base.extend({
     const passwords = Object.fromEntries(['site_a_writer', 'site_a_reader', 'site_b_writer'].map(name => [name, randomBytes(32).toString('hex')]));
     const credentials = Object.fromEntries(Object.entries(passwords).map(([name, value]) => ['FWI_BROWSER_' + name.toUpperCase(), value]));
     const child = spawn('python', ['-u', '../scripts/browser_e2e_harness.py', 'serve'], {
-      stdio: ['pipe', 'pipe', 'inherit'], env: { ...process.env, ...credentials },
+      stdio: ['pipe', 'pipe', 'inherit'], env: { ...process.env, ...credentials, ...(testInfo.title.startsWith('P0 completion:') ? {FWI_BROWSER_MASTER_HISTORY:'1'} : {}) },
     });
     const queue = [], readers = [];
     let exitError;
@@ -55,7 +55,7 @@ export const test = base.extend({
       expect(identity.identity.database).toBe('fwi_demo_test');
       expect(identity.identity.version).toContain('PostgreSQL 18.');
       expect(identity.schema).toMatch(/^fwi_demo_test_[0-9a-f]{32}$/);
-      expect(identity.revision).toBe('auth_0007');
+      expect(identity.revision).toBe('p0_0008');
       const snapshot = () => send('snapshot');
       await testInfo.attach('isolated-postgresql-identity', { body: JSON.stringify(identity, null, 2), contentType: 'application/json' });
       const baseline = await snapshot();

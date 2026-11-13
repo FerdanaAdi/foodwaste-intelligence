@@ -13,6 +13,8 @@ const https = tlsReady ? { cert: readFileSync(tlsPaths[0]!), key: readFileSync(t
 const UUID = "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}";
 const EVENT = new RegExp(`^/demo/v0\\.1/events/${UUID}$`);
 const MEASUREMENTS = new RegExp(`^/demo/v0\\.1/events/${UUID}/measurements$`);
+const EVIDENCE_CONTENT = new RegExp(`^/demo/v0\\.1/evidence/${UUID}/content$`);
+const PROPOSAL_APPROVAL = new RegExp(`^/demo/v0\\.1/reviews/${UUID}/approval$`);
 const EVENT_CREATE = "/demo/v0.1/events";
 // New demo routes (WP-01..WP-06). Queries are validated against per-route
 // allowlists below; anything outside still fails closed.
@@ -72,8 +74,8 @@ export default defineConfig({
         const scopedGet = [LEDGER_LIST, DATA_QUALITY, MASTER_NAMESPACES, MASTER_REFERENCES, MASTER_HISTORY, EVIDENCE, REVIEWS, EXPORT];
         const scopedPost = [EVIDENCE, REVIEWS];
         const method = request.method;
-        const allowed = method === "GET" ? (isP1Get || isEvent || isHistory || ['/auth/preauth','/auth/session','/auth/intents','/auth/memberships', ...scopedGet].includes(route))
-          : method === "POST" ? (isP1Post || route === EVENT_CREATE || isHistory || ['/auth/login','/auth/logout','/auth/intents','/auth/memberships', ...scopedPost].includes(route)) : false;
+        const allowed = method === "GET" ? (EVIDENCE_CONTENT.test(route) || route === "/demo/v0.1/administration" || isP1Get || isEvent || isHistory || ['/auth/preauth','/auth/session','/auth/intents','/auth/memberships', ...scopedGet].includes(route))
+          : method === "POST" ? (EVIDENCE_CONTENT.test(route) || PROPOSAL_APPROVAL.test(route) || route === MASTER_REFERENCES || isP1Post || route === EVENT_CREATE || isHistory || ['/auth/login','/auth/logout','/auth/intents','/auth/memberships', ...scopedPost].includes(route)) : false;
         if (!allowed) {
           response.statusCode = method === "GET" || method === "POST" ? 404 : 405;
           response.end("Synthetic demo route/method not allowed."); return;
@@ -102,7 +104,7 @@ export default defineConfig({
           if (origin !== approvedOrigin) {
             response.statusCode = 403; response.end("Cross-origin write denied."); return;
           }
-          if (!/^application\/json(?:\s*;\s*charset=utf-8)?$/i.test(request.headers["content-type"] || "")) {
+          if (!(EVIDENCE_CONTENT.test(route) ? /^(application\/pdf|image\/png|image\/jpeg)$/.test(request.headers["content-type"] || "") : /^application\/json(?:\s*;\s*charset=utf-8)?$/i.test(request.headers["content-type"] || ""))) {
             response.statusCode = 415; response.end("POST requires application/json."); return;
           }
         }
@@ -120,7 +122,7 @@ export default defineConfig({
     https,
     strictPort: true,
     proxy: {
-      "^/(?:auth/(?:preauth|session|login|logout|intents|memberships)(?:\\?.*)?|demo/v0\\.1/(?:events(?:/[0-9a-fA-F-]+(?:/measurements)?)?|data-quality|master/(?:namespaces|references(?:/history)?)|evidence|reviews|export)(?:\\?.*)?|p[12]/v0\\.1(?:/[a-zA-Z0-9_-]+)*(?:\\?.*)?)$": {
+      "^/(?:auth/(?:preauth|session|login|logout|intents|memberships)(?:\\?.*)?|demo/v0\\.1/(?:events(?:/[0-9a-fA-F-]+(?:/measurements)?)?|data-quality|master/(?:namespaces|references(?:/history)?)|evidence(?:/[0-9a-fA-F-]+/content)?|reviews(?:/[0-9a-fA-F-]+/approval)?|administration|export)(?:\\?.*)?|p[12]/v0\\.1(?:/[a-zA-Z0-9_-]+)*(?:\\?.*)?)$": {
         target: 'https://127.0.0.1:8000',
         secure: true,
         agent: tlsReady ? new Agent({ ca: readFileSync(tlsPaths[2]!), rejectUnauthorized: true }) : undefined,

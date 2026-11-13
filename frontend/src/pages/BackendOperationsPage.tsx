@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useState, useRef, useSyncExternalStore } from "react";
+import { Link } from "react-router";
 import { authSnapshot, permits, subscribeAuth } from "@/backend/auth";
 import {
+  createBackendLot, readReceiptLots,
   createBackendDisposition, createBackendMovement, createBackendReceipt,
   readDispositions, readKpiCatalogue, readKpiPreview, readLot, readReceipts, readTrends,
   type Disposition, type KpiEntry, type KpiPreview, type LotDetail, type Receipt, type TrendsView,
@@ -34,6 +36,7 @@ function ReceivingSection() {
   const [busy, setBusy] = useState(false);
   const [lot, setLot] = useState<LotDetail | null>(null);
   const [lotLoading, setLotLoading] = useState(false);
+  const lotRequest = useRef(0);
   const [movementForm, setMovementForm] = useState({ movement_type: "", direction: "", quantity: "", target_ref: "", occurred_at: "" });
   const [movementFeedback, setMovementFeedback] = useState<Feedback>(null);
   const canWrite = permits("receipt.create") && permits("movement.create");
@@ -49,10 +52,11 @@ function ReceivingSection() {
   }, [attempt]);
 
   const openLot = useCallback((lotId: string) => {
+    const request=++lotRequest.current;
     setLotLoading(true); setLot(null); setMovementFeedback(null);
-    readLot(lotId).then(value => setLot(value))
-      .catch(reason => setMovementFeedback({ kind: "error", message: reason instanceof Error ? reason.message : "Lot tidak dapat dibaca." }))
-      .finally(() => setLotLoading(false));
+    readLot(lotId).then(value => {if(request===lotRequest.current)setLot(value);})
+      .catch(reason => {if(request===lotRequest.current)setMovementFeedback({ kind: "error", message: reason instanceof Error ? reason.message : "Lot tidak dapat dibaca." });})
+      .finally(() => {if(request===lotRequest.current)setLotLoading(false);});
   }, []);
 
   async function submitReceipt(event: React.FormEvent) {
@@ -110,6 +114,7 @@ function ReceivingSection() {
       </li>)}
     </ul>}
     {lot && <div className="rounded border border-slate-300 bg-slate-50 p-3 text-sm space-y-2">
+      <p><Link className="underline" to={`/backend-production?lot=${encodeURIComponent(lot.lot_id)}`}>Gunakan lot pada produksi</Link></p>
       <p>Lot <span className="font-mono">{lot.lot_ref}</span> · {lot.item_code} · {lot.quantity} {lot.original_unit} ({lot.mass_basis})</p>
       <p>Stok teramati provisional: <strong>{lot.observed_stock} {lot.original_unit}</strong> — {lot.stock_note}</p>
       <ul className="list-disc pl-5">{lot.movements.map(movement => <li key={movement.movement_id}>
@@ -132,17 +137,44 @@ function ReceivingSection() {
   </section>;
 }
 
-function LotPicker({ receiptId, lot, onOpen, loading }: {
+function LotPicker({ receiptId, onOpen }: {
   receiptId: string; lot: LotDetail | null; onOpen: (lotId: string) => void; loading: boolean;
 }) {
-  const [open, setOpen] = useState(false);
-  useEffect(() => { if (open && (!lot || lot.receipt_id !== receiptId)) onOpen(receiptId); }, [open, receiptId, lot, onOpen]);
-  return <span className="ml-2">
-    <button type="button" className="rounded border px-2 py-1 text-xs" onClick={() => setOpen(value => !value)}>
-      {open ? "Tutup lot" : "Buka lot & stok (GET)"}
-    </button>
-    {loading && open && <LoadingState label="Memuat lot…" />}
-  </span>;
+  const [open,setOpen]=useState(false),[attempt,setAttempt]=useState(0);
+  const [rows,setRows]=useState<import('@/backend/p1').Lot[] | null>(null);
+  const [error,setError]=useState(''),[busy,setBusy]=useState(false),[locked,setLocked]=useState(false);
+  const [form,setForm]=useState({lot_ref:'',item_code:'',item_version:'',quantity:'',mass_basis:''});
+  const dispatching=useRef(false);
+  useEffect(() => {
+    if(!open)return;let active=true;const controller=new AbortController();setRows(null);setError('');
+    void readReceiptLots(receiptId,controller.signal).then(value=>{if(active)setRows(value);})
+      .catch(()=>{if(active)setError('Daftar lot tidak dapat dibaca.');});
+    return()=>{active=false;controller.abort();};
+  },[open,receiptId,attempt]);
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();if(busy||dispatching.current||locked||!form.lot_ref.trim()||!form.item_code.trim()||!DECIMAL.test(form.quantity)||!form.mass_basis)return;
+    dispatching.current=true;setBusy(true);
+    try {const result=await createBackendLot(receiptId,form);
+      if(result.kind==='saved'){setAttempt(n=>n+1);onOpen(result.value.lot_id);}
+      else {setError(result.message);if(result.kind==='unknown')setLocked(true);}
+    }finally{dispatching.current=false;setBusy(false);}
+  }
+  return <div className="mt-2 space-y-2">
+    <button type="button" onClick={()=>setOpen(v=>!v)}>{open?'Tutup lot':'Buka lot & stok (GET)'}</button>
+    {open && <><p>Lot terkait penerimaan ini; bukan kejadian sisa pangan baru.</p>
+      {error && <p role="alert">{error}</p>}{rows===null&&!error&&<p role="status">Memuat lot…</p>}
+      {rows?.length===0&&<p>Belum ada lot untuk penerimaan ini.</p>}
+      {rows?.map(row=><button key={row.lot_id} onClick={()=>onOpen(row.lot_id)}>Buka stok {row.lot_ref}</button>)}
+      {permits('receipt.create')&&<form onSubmit={submit} className="grid gap-2 sm:grid-cols-3"><fieldset disabled={busy||locked} className="contents">
+        <label>Referensi lot<input className={field} value={form.lot_ref} onChange={e=>setForm(v=>({...v,lot_ref:e.target.value}))} required /></label>
+        <label>Kode item sumber<input className={field} value={form.item_code} onChange={e=>setForm(v=>({...v,item_code:e.target.value}))} required /></label>
+        <label>Versi item (opsional)<input className={field} value={form.item_version} onChange={e=>setForm(v=>({...v,item_version:e.target.value}))} /></label>
+        <label>Jumlah lot (kg)<input className={field} value={form.quantity} onChange={e=>setForm(v=>({...v,quantity:e.target.value}))} required /></label>
+        <label>Kondisi pangan lot<select className={field} value={form.mass_basis} onChange={e=>setForm(v=>({...v,mass_basis:e.target.value}))} required><option value="">Pilih sesuai sumber</option>{BACKEND_MASS_BASES.map(b=><option key={b}>{b}</option>)}</select></label>
+        <button type="submit">Catat lot pada penerimaan ini</button>
+      </fieldset></form>}
+    </>}
+  </div>;
 }
 
 function DispositionSection() {

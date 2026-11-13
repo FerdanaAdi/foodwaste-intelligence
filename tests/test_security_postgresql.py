@@ -389,6 +389,8 @@ def test_migration_preserves_legacy_audit_and_reverses_only_without_security_evi
             # Gate B history is forward-only; do not traverse auth_0007 here.
             command.upgrade(config, 'auth_0002')
             assert connection.scalar(text('SELECT actor FROM audit_events WHERE audit_id=:id'), {'id': audit_id}) == 'synthetic-demo-actor'
+            from fwi.infrastructure.database.migration_safety import disposable_downgrade_permit
+            config.attributes['fwi_disposable_downgrade'] = disposable_downgrade_permit(connection, schema, oid)
             command.downgrade(config, 'demo_0001')
             assert connection.scalar(text('SELECT audit_id FROM audit_events')) == audit_id
     finally:
