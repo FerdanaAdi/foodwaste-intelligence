@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import {
   acknowledgeBackendRecommendation, createBackendCostReference, evaluateRecommendations,
-  readAlertRules, readCostValuation,
-  type AlertRule, type EvaluateView, type ValuationBlocked,
+  readAlertRules, readCostValuation, readRecommendations,
+  type AlertRule, type EvaluateView, type ValuationBlocked, type Recommendation, type RecommendationFilters,
 } from "@/backend/p1";
 import { isUUID } from "@/backend/contract";
-import { permits } from "@/backend/auth";
+import { authSnapshot, permits } from "@/backend/auth";
+import { Link } from "react-router";
 import { EmptyState, LoadingState } from "@/components/states/DisplayStates";
 
 const field = "w-full rounded border border-slate-300 bg-white p-2";
@@ -36,6 +37,28 @@ export default function BackendInsightsPage() {
   const [ackFeedback, setAckFeedback] = useState<Feedback>(null);
   const [busy, setBusy] = useState(false);
   const canAck = permits("alert.ack");
+  const site = authSnapshot().site;
+  const [filters, setFilters] = useState<RecommendationFilters>({});
+  const [applied, setApplied] = useState<RecommendationFilters>({});
+  const [alerts, setAlerts] = useState<Recommendation[]>([]);
+  const [readError, setReadError] = useState('');
+  const [loadingAlerts, setLoadingAlerts] = useState(false);
+  const [revision, setRevision] = useState(0);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setLoadingAlerts(true);
+    setAlerts([]);
+    setReadError('');
+    void readRecommendations(site, controller.signal, applied).then(rows => {
+      if (!controller.signal.aborted) setAlerts(rows);
+    }).catch(() => {
+      if (!controller.signal.aborted) setReadError('Riwayat alert tidak dapat dibaca.');
+    }).finally(() => {
+      if (!controller.signal.aborted) setLoadingAlerts(false);
+    });
+    return () => controller.abort();
+  }, [site, applied, revision]);
 
   useEffect(() => {
     let active = true;
@@ -70,7 +93,7 @@ export default function BackendInsightsPage() {
   async function runEvaluation() {
     setEvaluationLoading(true); setEvaluation(null);
     const result = await evaluateRecommendations();
-    if (result.kind === "saved") setEvaluation(result.value);
+    if (result.kind === "saved") { setEvaluation(result.value); setRevision(value => value + 1); }
     else setAckFeedback({ kind: result.kind === "rejected" ? "error" : "unknown", message: result.message });
     setEvaluationLoading(false);
   }
@@ -88,7 +111,7 @@ export default function BackendInsightsPage() {
     setBusy(false);
     if (result.kind === "saved") {
       setAckFeedback({ kind: "success", message: `Rekomendasi ${result.value.state} dengan alasan tercatat. Tidak ada perubahan otomatis pada operasi.` });
-      void runEvaluation();
+      setRevision(value => value + 1);
     } else setAckFeedback({ kind: result.kind === "rejected" ? "error" : "unknown", message: result.message });
   }
 
@@ -98,6 +121,11 @@ export default function BackendInsightsPage() {
       <p>Referensi biaya manajerial (bukan akuntansi; harga hilang = N/A, bukan Rp0) dan rekomendasi struktural non-otonom: penjelasan + provenance, tanpa perubahan otomatis apa pun.</p>
     </header>
 
+    <section className={card}>
+      <h2 className="text-lg font-semibold">Cakupan catatan pengukuran</h2>
+      <p>Ringkasan mutu membedakan jumlah kejadian, jumlah pengukuran, kejadian tanpa pengukuran, missing, dan nol terukur. Cakupan jadwal pengukuran belum dapat dihitung tanpa daftar kesempatan pengukuran yang disetujui.</p>
+      <Link className="underline" to="/backend-demo/data-quality">Buka hitungan mutu data per periode kegiatan dapur</Link>
+    </section>
     <section className={card}>
       <h2 className="text-lg font-semibold">Referensi biaya (FR-203)</h2>
       <form onSubmit={submitCost} className="grid gap-3 sm:grid-cols-8" noValidate>
@@ -137,29 +165,41 @@ export default function BackendInsightsPage() {
           {rule.disabled && <span className="ml-2 rounded bg-slate-100 px-2 py-1 text-xs">dinonaktifkan (maintenance internal)</span>}
         </li>)}
       </ul>}
-      <button type="button" onClick={() => { void runEvaluation(); }} disabled={evaluationLoading || busy}
+      {canAck && <button type="button" onClick={() => { void runEvaluation(); }} disabled={evaluationLoading || busy}
         className="rounded bg-sky-700 px-4 py-2 text-white disabled:opacity-50">
         Evaluasi rekomendasi (POST, idempoten)
-      </button>
+      </button>}
       {evaluationLoading && <LoadingState label="Mengevaluasi…" />}
+      <form className="grid gap-3 sm:grid-cols-4" onSubmit={event => {
+        event.preventDefault();
+        setApplied({ ...filters });
+      }}>
+        <label>Dari tanggal pencatatan (UTC)<input className={field} type="date" value={filters.recorded_from ?? ''} onChange={event => setFilters({ ...filters, recorded_from: event.target.value })} /></label>
+        <label>Sampai tanggal pencatatan (UTC)<input className={field} type="date" min={filters.recorded_from} value={filters.recorded_to ?? ''} onChange={event => setFilters({ ...filters, recorded_to: event.target.value })} /></label>
+        <label>Status alert<select className={field} value={filters.state ?? ''} onChange={event => setFilters({ ...filters, state: event.target.value })}>
+          <option value="">Semua status</option><option value="open">Terbuka</option><option value="acknowledged">Ditinjau</option><option value="dismissed">Ditutup</option>
+        </select></label>
+        <label>Versi aturan sumber<input className={field} maxLength={40} value={filters.rule_version ?? ''} onChange={event => setFilters({ ...filters, rule_version: event.target.value })} /></label>
+        <button type="submit">Terapkan filter alert</button>
+      </form>
+      <p className="text-sm">Daftar menampilkan hingga 500 alert terbaru dari lokasi aktif. Periode ini memakai tanggal pencatatan alert dalam UTC.</p>
+      {readError && <p role="alert">{readError}</p>}
+      {loadingAlerts && <LoadingState label="Memuat riwayat alert…" />}
+      {!loadingAlerts && !readError && alerts.length === 0 && <EmptyState title="Belum ada alert tersimpan untuk filter ini" />}
+      <ul className="space-y-2 text-sm">
+        {alerts.map(alert => <li key={alert.recommendation_id} className="rounded border border-slate-200 p-2">
+          <span>{alert.detected_issue}</span> · <strong>{alert.state}</strong> · Cakupan bukti: {alert.coverage}
+          <span className="block">{alert.recommended_action}</span>
+          <span className="block text-xs">Sumber: {alert.target_type} {alert.target_ref} · {alert.rule_code} {alert.rule_version} · {alert.recorded_at}</span>
+          {alert.ack_reason && <span className="block text-xs">Alasan: {alert.ack_reason}</span>}
+          {canAck && alert.state === 'open' && <button type="button" onClick={() => setAck(value => ({ ...value, recommendation_id: alert.recommendation_id }))}>Pilih alert ini</button>}
+        </li>)}
+      </ul>
       {evaluation && <div className="space-y-2 text-sm">
-        <p className="text-xs text-slate-600">{evaluation.note} · rule_version: {evaluation.rule_version}</p>
-        {evaluation.alerts.length === 0 && evaluation.insufficient.length === 0
-          ? <EmptyState title="Tidak ada temuan" description="Tidak ada kondisi struktural yang menyala pada data saat ini." />
-          : <ul className="space-y-2">
-            {evaluation.alerts.map(alert => <li key={alert.recommendation_id}
-              className="rounded border border-slate-200 p-2">
-              <span className="font-mono">{alert.rule_code}</span> · <strong>{alert.state}</strong> · {alert.coverage}
-              <span className="block">{alert.detected_issue}</span>
-              <span className="block text-xs text-slate-600">{alert.recommended_action}</span>
-              {alert.ack_reason && <span className="block text-xs">Alasan: {alert.ack_reason}</span>}
-            </li>)}
-            {evaluation.insufficient.map(item => <li key={`${item.rule_code}:${item.target_ref}`}
-              className="rounded border border-slate-200 bg-slate-50 p-2">
-              <span className="font-mono">{item.rule_code}</span> · <strong>{item.state}</strong>
-              <span className="block">{item.reason}</span>
-            </li>)}
-          </ul>}
+        <p>{evaluation.note} · {evaluation.rule_version}</p>
+        {evaluation.insufficient.map(item => <p key={`${item.rule_code}:${item.target_ref}`}>
+          <strong>BLOCKED ({item.state})</strong> · {item.reason} · Sumber: {item.target_type} {item.target_ref} · {item.rule_code}
+        </p>)}
       </div>}
       {canAck && <form onSubmit={submitAck} className="grid gap-3 sm:grid-cols-4" noValidate>
         <label className="block">UUID rekomendasi<input className={field} value={ack.recommendation_id} onChange={e => setAck(v => ({ ...v, recommendation_id: e.target.value }))} /></label>
