@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import {
   createBackendBatch, createBackendBatchIO, createBackendLink, createBackendMenu, createBackendRecipe,
   readBatch, readLineage, type BatchDetail, type LineageView,
 } from "@/backend/p1";
 import { useSearchParams } from "react-router";
-import { BACKEND_MASS_BASES } from "@/backend/contract";
+import { BACKEND_MASS_BASES, isUUID } from "@/backend/contract";
 import { permits } from "@/backend/auth";
 import { EmptyState, LoadingState } from "@/components/states/DisplayStates";
 
@@ -22,7 +22,23 @@ function FeedbackLine({ feedback }: { feedback: Feedback }) {
 }
 
 export default function BackendProductionPage() {
-  const [params]=useSearchParams();
+  const [params, setSearchParams] = useSearchParams();
+  const [openId, setOpenId] = useState(params.get("batch") ?? "");
+  const openedParamRef = useRef<string | null>(null);
+  const batchRequestRef = useRef(0);
+  const batchTargetRef = useRef<string | null>(null);
+  const mountedRef = useRef(true);
+  const batchParam = params.get("batch");
+  const batchParamRef = useRef(batchParam);
+  useLayoutEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      batchRequestRef.current += 1;
+      batchTargetRef.current = null;
+      openedParamRef.current = null;
+    };
+  }, []);
   const [menu, setMenu] = useState({ menu_code: "", name: "" });
   const [menuFeedback, setMenuFeedback] = useState<Feedback>(null);
   const [recipe, setRecipe] = useState({ recipe_code: "", version_no: "1", menu_id: "",
@@ -77,11 +93,49 @@ export default function BackendProductionPage() {
   }
 
   async function openBatch(batchId: string) {
-    setBatchLoading(true); setActiveBatch(null);
-    readBatch(batchId).then(setActiveBatch)
-      .catch(reason => setBatchFeedback({ kind: "error", message: reason instanceof Error ? reason.message : "Batch tidak dapat dibaca." }))
-      .finally(() => setBatchLoading(false));
+    const request = ++batchRequestRef.current;
+    const routeAtDispatch = batchParamRef.current;
+    batchTargetRef.current = batchId;
+    const current = () => mountedRef.current && request === batchRequestRef.current &&
+      batchTargetRef.current === batchId &&
+      (batchParamRef.current === routeAtDispatch || batchParamRef.current === batchId);
+    setBatchLoading(true); setActiveBatch(null); setBatchFeedback(null); setIoFeedback(null);
+    return readBatch(batchId).then(value => {
+      if (!current()) return;
+      if (value.batch_id !== batchId) throw new Error("Respons batch tidak sesuai target; pencatatan IO ditutup.");
+      setActiveBatch(value); setOpenId(batchId);
+      if (openedParamRef.current !== batchId) {
+        openedParamRef.current = batchId;
+        setSearchParams(previous => { const next = new URLSearchParams(previous); next.set("batch", batchId); return next; }, { replace: true });
+      }
+    })
+      .catch(reason => { if (current()) setBatchFeedback({ kind: "error", message: reason instanceof Error ? reason.message : "Batch tidak dapat dibaca." }); })
+      .finally(() => { if (current()) setBatchLoading(false); });
   }
+
+  function submitOpenBatch(event: React.FormEvent) {
+    event.preventDefault();
+    if (batchLoading) return;
+    if (!isUUID(openId.trim())) {
+      setBatchFeedback({ kind: "error", message: "UUID batch tidak valid." });
+      return;
+    }
+    setBatchFeedback(null);
+    void openBatch(openId.trim());
+  }
+
+  useLayoutEffect(() => {
+    batchParamRef.current = batchParam;
+    setOpenId(batchParam ?? "");
+    if (!batchParam || !isUUID(batchParam)) {
+      batchRequestRef.current += 1; batchTargetRef.current = null; openedParamRef.current = null;
+      setActiveBatch(null); setBatchLoading(false); setBatchFeedback(null); setIoFeedback(null);
+      return;
+    }
+    if (openedParamRef.current === batchParam) return;
+    openedParamRef.current = batchParam;
+    void openBatch(batchParam);
+  }, [batchParam]);
 
   async function submitBatch(event: React.FormEvent) {
     event.preventDefault();
@@ -89,9 +143,13 @@ export default function BackendProductionPage() {
       setBatchFeedback({ kind: "error", message: "UUID resep wajib diisi." });
       return;
     }
+    const request = batchRequestRef.current;
+    const routeAtDispatch = batchParamRef.current;
     setBusy(true); setBatchFeedback(null);
     const result = await createBackendBatch(batch);
+    if (!mountedRef.current) return;
     setBusy(false);
+    if (request !== batchRequestRef.current || batchParamRef.current !== routeAtDispatch) return;
     if (result.kind === "saved") {
       setBatchFeedback({ kind: "success", message: "Batch tersimpan. Catat input/output di bawah; yield hanya dihitung pada pasangan basis yang sepadan." });
       openBatch(result.value.batch_id);
@@ -100,18 +158,29 @@ export default function BackendProductionPage() {
 
   async function submitIO(event: React.FormEvent) {
     event.preventDefault();
-    if (busy || !activeBatch) return;
+    if (busy || batchLoading || !activeBatch || batchTargetRef.current !== activeBatch.batch_id ||
+        batchParamRef.current !== activeBatch.batch_id) return;
     if (!io.io_kind || !DECIMAL.test(io.quantity) || !io.occurred_at) {
       setIoFeedback({ kind: "error", message: "Jenis io, jumlah desimal, dan waktu wajib diisi." });
       return;
     }
+    if (io.source_lot_id && !isUUID(io.source_lot_id)) {
+      setIoFeedback({ kind: "error", message: "UUID lot sumber tidak valid; isi UUID lot atau kosongkan." });
+      return;
+    }
+    const target = activeBatch.batch_id;
+    const request = batchRequestRef.current;
+    const routeAtDispatch = batchParamRef.current;
     setBusy(true); setIoFeedback(null);
-    const result = await createBackendBatchIO(activeBatch.batch_id, io);
+    const result = await createBackendBatchIO(target, io);
+    if (!mountedRef.current) return;
     setBusy(false);
+    if (request !== batchRequestRef.current || batchTargetRef.current !== target ||
+        batchParamRef.current !== routeAtDispatch) return;
     if (result.kind === "saved") {
       setIo({ io_kind: "", quantity: "", mass_basis: "raw", source_lot_id: "", occurred_at: "" });
       setIoFeedback({ kind: "success", message: "IO tersimpan. Rework tidak masuk numerator yield." });
-      openBatch(activeBatch.batch_id);
+      void openBatch(target);
     } else setIoFeedback({ kind: result.kind === "rejected" ? "error" : "unknown", message: result.message });
   }
 
@@ -140,6 +209,9 @@ export default function BackendProductionPage() {
       .catch(reason => setLinkFeedback({ kind: "error", message: reason instanceof Error ? reason.message : "Lineage tidak dapat dibaca." }))
       .finally(() => setLineageLoading(false));
   }
+
+  const visibleBatch = activeBatch && batchTargetRef.current === activeBatch.batch_id &&
+    batchParam === activeBatch.batch_id ? activeBatch : null;
 
   return <div className="space-y-6">
     <header className="space-y-2">
@@ -173,6 +245,10 @@ export default function BackendProductionPage() {
 
     <section className={card}>
       <h2 className="text-lg font-semibold">Batch produksi</h2>
+      <form onSubmit={submitOpenBatch} className="grid gap-2 sm:grid-cols-4" noValidate>
+        <label className="block">UUID batch tersimpan<input className={field} value={openId} onChange={e => setOpenId(e.target.value)} placeholder="Tempel UUID batch" /></label>
+        <button type="submit" disabled={batchLoading} className="self-end rounded border px-4 py-2 disabled:opacity-50">Buka batch tersimpan</button>
+      </form>
       {canWrite && <form onSubmit={submitBatch} className="grid gap-3 sm:grid-cols-4" noValidate>
         <label className="block">UUID resep<input className={field} value={batch.recipe_id} onChange={e => setBatch(v => ({ ...v, recipe_id: e.target.value }))} /></label>
         <label className="block">Tanggal operasi<input className={field} type="date" value={batch.operation_date} onChange={e => setBatch(v => ({ ...v, operation_date: e.target.value }))} /></label>
@@ -185,13 +261,13 @@ export default function BackendProductionPage() {
         <button type="submit" disabled={busy} className="rounded bg-sky-700 px-4 py-2 text-white disabled:opacity-50 sm:col-span-4">Buat batch</button>
       </form>}
       <FeedbackLine feedback={batchFeedback} />
-      {activeBatch && <div className="rounded border border-slate-300 bg-slate-50 p-3 text-sm space-y-2">
-        <p>Batch <span className="font-mono">{activeBatch.batch_id}</span> · resep {activeBatch.recipe_code} v{activeBatch.recipe_version_no} · {activeBatch.operation_date}</p>
-        <ul className="list-disc pl-5">{activeBatch.io.map(entry => <li key={entry.io_id}>
+      {visibleBatch && <div className="rounded border border-slate-300 bg-slate-50 p-3 text-sm space-y-2">
+        <p>Batch <span className="font-mono">{visibleBatch.batch_id}</span> · resep {visibleBatch.recipe_code} v{visibleBatch.recipe_version_no} · {visibleBatch.operation_date}</p>
+        <ul className="list-disc pl-5">{visibleBatch.io.map(entry => <li key={entry.io_id}>
           {entry.io_kind} · {entry.quantity} {entry.original_unit} ({entry.mass_basis}){entry.source_lot_id ? ` · lot ${entry.source_lot_id.slice(0, 8)}…` : ""}
         </li>)}</ul>
-        <p>Yield: <strong>{activeBatch.yield_view.status}</strong>
-          {activeBatch.yield_view.value ? ` = ${activeBatch.yield_view.value} (input ${activeBatch.yield_view.input_total} → output ${activeBatch.yield_view.primary_output_total}; rework ${activeBatch.yield_view.rework_total ?? "N/A"} tidak dihitung dua kali)` : ` — ${activeBatch.yield_view.reason}`}</p>
+        <p>Yield: <strong>{visibleBatch.yield_view.status}</strong>
+          {visibleBatch.yield_view.value ? ` = ${visibleBatch.yield_view.value} (input ${visibleBatch.yield_view.input_total} → output ${visibleBatch.yield_view.primary_output_total}; rework ${visibleBatch.yield_view.rework_total ?? "N/A"} tidak dihitung dua kali)` : ` — ${visibleBatch.yield_view.reason}`}</p>
         {canWrite && <form onSubmit={submitIO} className="grid gap-2 sm:grid-cols-6" noValidate>
           <select className={field} value={io.io_kind} onChange={e => setIo(v => ({ ...v, io_kind: e.target.value }))} aria-label="Jenis io">
             <option value="">— io —</option><option value="input">input</option><option value="output_primary">output_primary</option><option value="output_rework">output_rework</option>

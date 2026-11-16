@@ -10,6 +10,7 @@ export default function BackendAuthBoundary() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [recoveryError, setRecoveryError] = useState('');
+  const [loginNotice, setLoginNotice] = useState('');
   const privateRoot = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   useEffect(() => { setUsername(''); setPassword(''); }, [auth.generation]);
@@ -28,6 +29,7 @@ export default function BackendAuthBoundary() {
     const close = listenForAuthChanges();
     if (!legacyBlocked && authSnapshot().phase !== 'ready') void checkSession();
     const hide = () => {
+      if (authSnapshot().phase !== 'ready') setLoginNotice('Isian login dikosongkan saat berpindah jendela untuk melindungi akun. Isi ulang akun dan password, lalu klik Masuk tanpa berpindah jendela. Periksa sesi hanya membaca sesi yang sudah ada; tombol itu tidak melakukan login.');
       if (privateRoot.current) privateRoot.current.hidden = true;
       invalidateAuth('Data privat ditutup sampai sesi diverifikasi kembali.', 'checking');
     };
@@ -59,8 +61,9 @@ export default function BackendAuthBoundary() {
     <h1 className="text-2xl font-bold">Masuk ke FWI</h1>
     <p>Cookie sesi HttpOnly; hanya HTTPS lokal yang disetujui. Data DemoStore tetap terpisah.</p>
     {auth.message && <p role="alert">{auth.message}</p>}
+    {loginNotice && <p role="status">{loginNotice}</p>}
     {auth.phase === 'checking' ? <p role="status">Memverifikasi sesi…</p> : <form className="space-y-3" onSubmit={e => {
-      e.preventDefault(); const credential = password, account = username; setPassword(''); setUsername('');
+      e.preventDefault(); setLoginNotice(''); const credential = password, account = username; setPassword(''); setUsername('');
       void login(account, credential).then(() => navigate('/backend-demo', { replace: true })).catch(() => {});
     }}>
       <label className="block">Akun sintetis<input className="block w-full rounded border p-2" autoComplete="username" value={username} onChange={e => setUsername(e.target.value)} required /></label>

@@ -137,24 +137,35 @@ export async function protectedBinary(path: string, signal: AbortSignal) {
 export function permits(permission: string) {
   return state.phase === 'ready' && !!state.session?.sites.find(s => s.site_id === state.site)?.permissions.includes(permission);
 }
+function loginFailure(status: number): AuthFailure {
+  const message = status === 401
+    ? 'Login belum berhasil (HTTP 401). Periksa akun dan password sintetis.'
+    : status === 403
+    ? 'Login ditolak (HTTP 403). Pemeriksaan keamanan atau CSRF tidak sesuai. Muat ulang halaman HTTPS yang disetujui sebelum mencoba lagi.'
+    : status === 429
+    ? 'Terlalu banyak percobaan login (HTTP 429). Tunggu hingga jendela pembatasan 15 menit berakhir; jangan mencoba berulang kali.'
+    : `Permintaan login belum berhasil (HTTP ${status}). Tidak ada pengiriman ulang otomatis.`;
+  return new AuthFailure(status, message);
+}
+
 export async function login(username: string, password: string) {
   if (typeof BroadcastChannel === 'undefined') throw new AuthFailure(403, 'Koordinasi tab tidak tersedia.');
   invalidateAuth('', 'checking'); channel?.postMessage('transition');
   const generation = state.generation;
   try {
     const preauth = await wire('/auth/preauth');
-    if (!preauth.ok) throw new AuthFailure(preauth.status);
+    if (!preauth.ok) throw loginFailure(preauth.status);
     const bootstrap = await preauth.json() as { csrf_token: string };
     if (state.generation !== generation) throw new AuthFailure(401);
     if (!/^[a-f0-9]{64}$/.test(bootstrap.csrf_token)) throw new AuthFailure(401);
     const response = await wire('/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json',
       'X-CSRF-Token': bootstrap.csrf_token }, body: JSON.stringify({ username, password }) });
-    if (!response.ok) throw new AuthFailure(response.status, 'Login ditolak atau sementara dibatasi.');
+    if (!response.ok) throw loginFailure(response.status);
     const issued = identity(response);
     await response.json();
     if (state.generation !== generation) throw new AuthFailure(401);
     const context = await wire('/auth/session');
-    if (!context.ok) throw new AuthFailure(context.status);
+    if (!context.ok) throw new AuthFailure(context.status, `Sesi setelah login belum terverifikasi (HTTP ${context.status}). Gunakan Chrome UAT yang disiapkan dan pastikan cookie diizinkan; jangan mengirim ulang otomatis.`);
     const session = parseSession(await context.json(), context);
     if (state.generation !== generation || !same(issued, session)) throw new AuthFailure(401);
     publish({ ...state, phase: 'ready', session, site: session.sites[0]?.site_id ?? '', message: '' });
