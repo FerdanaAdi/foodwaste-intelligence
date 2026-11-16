@@ -50,6 +50,18 @@ export default function AlertSourcePanel({ alert, onClose }: { alert: AlertSourc
           <dt>Waktu pengukuran dicatat</dt><dd><Time value={row.recorded_at} /></dd></dl>
       </li>)}</ul>
     </>}
+    {source.phase === "ready" && source.data?.kind === "service" && <>
+      <dl className="[&>dd]:break-all"><dt>ID layanan makan</dt><dd>{source.data.service.service_id}</dd>
+        <dt>Kerangka sampel (sampling_frame)</dt><dd><Value value={source.data.service.sampling_frame} /></dd>
+        <dt>Ukuran sampel (sample_size)</dt><dd><Value value={source.data.service.sample_size == null ? null : String(source.data.service.sample_size)} /></dd>
+        <dt>Metode sampling (sampling_method)</dt><dd><Value value={source.data.service.sampling_method} /></dd>
+        <dt>Status cakupan sampling dari server</dt><dd>{source.data.service.sampling_coverage_status}</dd>
+        <dt>Jumlah porsi tersaji</dt><dd><Value value={source.data.service.served_count == null ? null : String(source.data.service.served_count)} /></dd>
+        <dt>Massa tersaji</dt><dd><Value value={source.data.service.served_mass} unit={source.data.service.original_unit ?? undefined} /></dd>
+        <dt>Kondisi pangan saat diukur (mass basis)</dt><dd><Value value={source.data.service.mass_basis} /></dd>
+        <dt>Waktu input layanan</dt><dd><Time value={source.data.service.recorded_at} /></dd></dl>
+      <p>Nilai di atas adalah catatan layanan saat ini. Panel tidak memperluas sampel menjadi cakupan populasi dan tidak menghitung estimasi.</p>
+    </>}
     {source.phase === "ready" && source.data?.kind === "delivery" && <>
       <Link className="underline" to={`/backend-distribution?delivery=${source.data.delivery.delivery_id}`}>Buka rincian pengiriman</Link>
       <dl className="[&>dd]:break-all"><dt>ID pengiriman</dt><dd>{source.data.delivery.delivery_id}</dd>
