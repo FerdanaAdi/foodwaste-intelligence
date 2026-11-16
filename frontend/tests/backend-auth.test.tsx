@@ -4,7 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import App from '@/App';
 import fixture from './fixtures/backend-detail.json';
 import { authResponse, prepareSession, sessionA } from './backend-auth-fixture';
-import { authSnapshot, checkSession, invalidateAuth, selectSite, type Session } from '@/backend/auth';
+import { authSnapshot, checkSession, invalidateAuth, selectSite, login, type Session } from '@/backend/auth';
 import { CAPTURE_JOURNAL_KEY } from '@/backend/write';
 import userEvent from '@testing-library/user-event';
 
@@ -209,4 +209,69 @@ it('accepts the actual combined P1/P2 session permissions including alert reads 
   await checkSession();
   expect(authSnapshot().phase).toBe('ready');
   expect(authSnapshot().session?.sites[0]?.permissions).toContain('alert.ack');
+});
+
+
+it('explains that focus changes clear login inputs, without submitting or retaining credentials', async () => {
+  invalidateAuth();
+  const fetcher = vi.fn(async (_url: string) => authResponse({}, 401));
+  vi.stubGlobal('fetch', fetcher);
+  mount();
+  const user = userEvent.setup();
+  await user.type(await screen.findByLabelText('Akun sintetis'), 'site_b_writer');
+  await user.type(screen.getByLabelText('Password'), 'synthetic-only-password');
+  await act(async () => fireEvent(window, new Event('blur')));
+  await act(async () => fireEvent(window, new Event('focus')));
+  expect(await screen.findByLabelText('Akun sintetis')).toHaveValue('');
+  expect(screen.getByLabelText('Password')).toHaveValue('');
+  expect(screen.getByText(/Isian login dikosongkan saat berpindah jendela/)).toBeVisible();
+  await user.click(screen.getByRole('button', { name: 'Periksa sesi (GET saja)' }));
+  await screen.findByLabelText('Akun sintetis');
+  expect(fetcher.mock.calls.every(call => call.length > 0 && call[0] === '/auth/session')).toBe(true);
+  expect(sessionStorage.length).toBe(0);
+});
+
+it.each([401,403,429])('shows the actual login HTTP %s without retrying the POST', async status => {
+  invalidateAuth();
+  const fetcher = vi.fn(async (url: string) => url === '/auth/preauth'
+    ? authResponse({ csrf_token: 'c'.repeat(64) }) : authResponse({}, status));
+  vi.stubGlobal('fetch', fetcher);
+  await expect(login('site_b_writer','synthetic-only-password')).rejects.toMatchObject({status});
+  expect(authSnapshot().phase).toBe('blocked');
+  expect(authSnapshot().message).toContain(`HTTP ${status}`);
+  expect(fetcher.mock.calls.filter(call => call[0] === '/auth/login')).toHaveLength(1);
+});
+
+it('logs out and logs in as three distinct personas without carrying over identity or permissions', async () => {
+  invalidateAuth();
+  const owners: Record<string,Session> = {
+    site_a_writer: sessionA,
+    site_a_reader: {...sessionB,sites:[{...sessionA.sites[0],permissions:['event.read','measurement.read']}]},
+    site_b_writer: {...sessionB,principal_id:'ffffffff-ffff-4fff-8fff-ffffffffffff',
+      sites:[{...sessionA.sites[0],site_id:'22222222-2222-4222-8222-222222222223'}]},
+  };
+  let active: Session | null = null;
+  const fetcher = vi.fn(async (url: string, options?: RequestInit) => {
+    if (url === '/auth/preauth') return authResponse({csrf_token:'c'.repeat(64)});
+    if (url === '/auth/login') { active=owners[JSON.parse(String(options?.body)).username]; return authResponse({csrf_token:active.csrf_token},200,active); }
+    if (url === '/auth/session') return active ? authResponse(active,200,active) : authResponse({},401);
+    if (url === '/auth/logout') { const owner=active!;active=null;return authResponse({logged_out:true},200,owner); }
+    if (url === '/auth/intents') return authResponse([],200,active!);
+    return domainResponse(url,'scoped-private',active!);
+  });
+  vi.stubGlobal('fetch',fetcher);mount();const user=userEvent.setup();
+  for (const name of Object.keys(owners)) {
+    await user.type(await screen.findByLabelText('Akun sintetis'),name);
+    await user.type(screen.getByLabelText('Password'),'synthetic-only-password');
+    await user.click(screen.getByRole('button',{name:/^Masuk$/}));
+    await screen.findByLabelText('Lokasi dapur yang dapat diakses');
+    expect(authSnapshot().session?.principal_id).toBe(owners[name].principal_id);
+    expect(authSnapshot().site).toBe(owners[name].sites[0].site_id);
+    expect(authSnapshot().session?.sites[0].permissions.includes('event.create')).toBe(name!=='site_a_reader');
+    await user.click(screen.getByRole('button',{name:/^Keluar$/}));
+    await screen.findByLabelText('Akun sintetis');
+    expect(authSnapshot().session).toBeNull();
+  }
+  expect(fetcher.mock.calls.filter(call=>call[0]==='/auth/login')).toHaveLength(3);
+  expect(sessionStorage.length).toBe(0);expect(localStorage.length).toBe(0);
 });

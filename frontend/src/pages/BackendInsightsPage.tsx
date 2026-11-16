@@ -22,6 +22,13 @@ function FeedbackLine({ feedback }: { feedback: Feedback }) {
       : "rounded border border-red-300 bg-red-50 p-3"}>{feedback.message}</p>;
 }
 
+function SourceTarget({ targetType, targetRef }: { targetType: string; targetRef: string }) {
+  if (targetType === "waste_event" && isUUID(targetRef)) {
+    return <Link className="underline" to={`/backend-demo/events/${targetRef}`}>{targetRef}</Link>;
+  }
+  return <>{targetRef}</>;
+}
+
 export default function BackendInsightsPage() {
   const [cost, setCost] = useState({ scope_type: "batch", scope_ref: "", currency: "IDR", amount: "",
     unit_basis: "kg_raw", price_source: "", price_date: "", method_version: "managerial-est-v0" });
@@ -40,6 +47,7 @@ export default function BackendInsightsPage() {
   const site = authSnapshot().site;
   const [filters, setFilters] = useState<RecommendationFilters>({});
   const [applied, setApplied] = useState<RecommendationFilters>({});
+  const [filterFeedback, setFilterFeedback] = useState<Feedback>(null);
   const [alerts, setAlerts] = useState<Recommendation[]>([]);
   const [readError, setReadError] = useState('');
   const [loadingAlerts, setLoadingAlerts] = useState(false);
@@ -115,6 +123,16 @@ export default function BackendInsightsPage() {
     } else setAckFeedback({ kind: result.kind === "rejected" ? "error" : "unknown", message: result.message });
   }
 
+  function applyFilters(event: React.FormEvent) {
+    event.preventDefault();
+    if (filters.recorded_from && filters.recorded_to && filters.recorded_from > filters.recorded_to) {
+      setFilterFeedback({ kind: "error", message: "Rentang tanggal tidak valid: 'Dari tanggal pencatatan' melewati 'Sampai tanggal pencatatan'; filter tidak dikirim." });
+      return;
+    }
+    setFilterFeedback(null);
+    setApplied({ ...filters });
+  }
+
   return <div className="space-y-6">
     <header className="space-y-2">
       <h1 className="text-2xl font-bold">Insight terkontrol — kandidat FR-203/FR-204</h1>
@@ -170,10 +188,7 @@ export default function BackendInsightsPage() {
         Evaluasi rekomendasi (POST, idempoten)
       </button>}
       {evaluationLoading && <LoadingState label="Mengevaluasi…" />}
-      <form className="grid gap-3 sm:grid-cols-4" onSubmit={event => {
-        event.preventDefault();
-        setApplied({ ...filters });
-      }}>
+      <form className="grid gap-3 sm:grid-cols-4" noValidate onSubmit={applyFilters}>
         <label>Dari tanggal pencatatan (UTC)<input className={field} type="date" value={filters.recorded_from ?? ''} onChange={event => setFilters({ ...filters, recorded_from: event.target.value })} /></label>
         <label>Sampai tanggal pencatatan (UTC)<input className={field} type="date" min={filters.recorded_from} value={filters.recorded_to ?? ''} onChange={event => setFilters({ ...filters, recorded_to: event.target.value })} /></label>
         <label>Status alert<select className={field} value={filters.state ?? ''} onChange={event => setFilters({ ...filters, state: event.target.value })}>
@@ -182,6 +197,7 @@ export default function BackendInsightsPage() {
         <label>Versi aturan sumber<input className={field} maxLength={40} value={filters.rule_version ?? ''} onChange={event => setFilters({ ...filters, rule_version: event.target.value })} /></label>
         <button type="submit">Terapkan filter alert</button>
       </form>
+      <FeedbackLine feedback={filterFeedback} />
       <p className="text-sm">Daftar menampilkan hingga 500 alert terbaru dari lokasi aktif. Periode ini memakai tanggal pencatatan alert dalam UTC.</p>
       {readError && <p role="alert">{readError}</p>}
       {loadingAlerts && <LoadingState label="Memuat riwayat alert…" />}
@@ -190,7 +206,7 @@ export default function BackendInsightsPage() {
         {alerts.map(alert => <li key={alert.recommendation_id} className="rounded border border-slate-200 p-2">
           <span>{alert.detected_issue}</span> · <strong>{alert.state}</strong> · Cakupan bukti: {alert.coverage}
           <span className="block">{alert.recommended_action}</span>
-          <span className="block text-xs">Sumber: {alert.target_type} {alert.target_ref} · {alert.rule_code} {alert.rule_version} · {alert.recorded_at}</span>
+          <span className="block text-xs">Sumber: {alert.target_type} <SourceTarget targetType={alert.target_type} targetRef={alert.target_ref} /> · {alert.rule_code} {alert.rule_version} · {alert.recorded_at}</span>
           {alert.ack_reason && <span className="block text-xs">Alasan: {alert.ack_reason}</span>}
           {canAck && alert.state === 'open' && <button type="button" onClick={() => setAck(value => ({ ...value, recommendation_id: alert.recommendation_id }))}>Pilih alert ini</button>}
         </li>)}
