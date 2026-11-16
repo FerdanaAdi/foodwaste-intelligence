@@ -289,7 +289,7 @@ describe("BackendInsightsPage (FR-203/204)", () => {
     await user.click(screen.getByRole("button", { name: /Catat tindakan/i }));
     await waitFor(() => expect(acknowledgeBackendRecommendation).toHaveBeenCalledWith(REC_ID,
       { state: "acknowledged", reason: "reviewed with the site team" }));
-    expect(await screen.findByText(/acknowledged dengan alasan tercatat/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Tinjauan tercatat.*alasan tercatat/i)).toBeInTheDocument();
     expect(evaluateRecommendations).toHaveBeenCalledTimes(1);
   });
 
@@ -327,12 +327,12 @@ describe("BackendInsightsPage (FR-203/204)", () => {
     expect(screen.queryByRole("link", { name: "bukan-uuid" })).not.toBeInTheDocument();
   });
 
-  it("keeps other target types as plain text even with a valid UUID", async () => {
+  it("links a delivery source to the existing distribution page", async () => {
     readRecommendations.mockResolvedValue([alertWith({ target_type: "delivery", target_ref: DELIVERY_ID })]);
     render(<MemoryRouter><BackendInsightsPage /></MemoryRouter>);
     await screen.findByText("coverage insufficient for analysis");
     expect(screen.getAllByText(new RegExp(DELIVERY_ID)).length).toBeGreaterThan(0);
-    expect(screen.queryByRole("link", { name: DELIVERY_ID })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: DELIVERY_ID })).toHaveAttribute("href", `/backend-distribution?delivery=${DELIVERY_ID}`);
   });
 
   it("renders global rules read-only without any mutation control (T-06/T-08)", async () => {

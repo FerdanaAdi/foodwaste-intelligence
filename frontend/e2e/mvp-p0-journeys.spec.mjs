@@ -640,7 +640,7 @@ test('M5 alerts: persisted site history, UTC/status filters and one audited ackn
   await choose.click();
   await page.getByLabel('Alasan (wajib, tercatat)').fill('Synthetic review');
   await page.getByRole('button',{name:'Catat tindakan'}).click();
-  await expect(page.getByText(/acknowledged dengan alasan tercatat/)).toBeVisible();
+  await expect(page.getByRole('status').filter({hasText:/Tinjauan tercatat.*alasan tercatat/})).toBeVisible();
   await expect(choose).toHaveCount(0);
   await page.reload();
   await expect(page.getByText('Alasan: Synthetic review')).toBeVisible();
