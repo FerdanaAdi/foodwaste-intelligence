@@ -78,7 +78,8 @@ function InsightsContext({ context, explainRule }: Props & { context: ReturnType
   const selection = useRef(0);
   const evalFlight = useRef(false);
   const ackFlight = useRef(false);
-  const reasonInput = useRef<HTMLInputElement>(null);
+  const sourceTrigger = useRef<HTMLButtonElement | null>(null);
+  const alertHeading = useRef<HTMLHeadingElement>(null);
   const [sourceSelection, setSourceSelection] = useState<{ alert: Recommendation; sequence: number } | null>(null);
   const [unknownAck, setUnknownAck] = useState<string | null>(null);
   const evaluatePath = `/p2/v0.1/recommendations/evaluate?site_id=${encodeURIComponent(context.site)}`;
@@ -92,7 +93,7 @@ function InsightsContext({ context, explainRule }: Props & { context: ReturnType
   const current = () => mounted.current && alertContextKey(authSnapshot()) === alertContextKey(context);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; selection.current += 1; }; }, []);
 
-  function chooseAlert(alert: Recommendation, showSource: boolean) {
+  function chooseAlert(alert: Recommendation, trigger: HTMLButtonElement) {
     if (!current() || alert.site_id !== context.site) {
       setAckFeedback({ kind: "error", message: "Konteks lokasi berubah; pilih kembali alert pada lokasi aktif." });
       return;
@@ -104,8 +105,9 @@ function InsightsContext({ context, explainRule }: Props & { context: ReturnType
     const sequence = ++selection.current;
     setAck({ recommendation_id: alert.recommendation_id, state: "acknowledged", reason: "" });
     setAckFeedback(null);
-    if (showSource) setSourceSelection({ alert, sequence });
-    else { setSourceSelection(null); reasonInput.current?.focus(); }
+    sourceTrigger.current = trigger;
+    setEvaluation(null);
+    setSourceSelection({ alert, sequence });
   }
 
 
@@ -193,7 +195,7 @@ function InsightsContext({ context, explainRule }: Props & { context: ReturnType
         { state: ack.state as "acknowledged" | "dismissed", reason: ack.reason });
       if (!current() || request !== selection.current) return;
       if (result.kind === "saved") {
-        setAckFeedback({ kind: "success", message: `Rekomendasi ${result.value.state} dengan alasan tercatat untuk alert ${target}. Ini bukan bukti masalah selesai; catatan sumber tidak diubah.` });
+        setAckFeedback({ kind: "success", message: `${labelFor(ALERT_STATUS_LABELS, result.value.state)} untuk alert ${target}; alasan tercatat. Ini bukan bukti masalah selesai; catatan sumber tidak diubah.` });
         setRevision(value => value + 1);
       } else {
         if (result.kind === "unknown") setUnknownAck(target);
@@ -211,6 +213,7 @@ function InsightsContext({ context, explainRule }: Props & { context: ReturnType
       return;
     }
     setFilterFeedback(null);
+    setEvaluation(null);
     selection.current += 1;
     setSourceSelection(null);
     setAck({ recommendation_id: "", state: "acknowledged", reason: "" });
@@ -255,7 +258,7 @@ function InsightsContext({ context, explainRule }: Props & { context: ReturnType
     </section>
 
     <section className={card}>
-      <h2 className="text-lg font-semibold">Rekomendasi struktural (FR-204)</h2>
+      <h2 ref={alertHeading} tabIndex={-1} className="text-lg font-semibold">Rekomendasi struktural (FR-204)</h2>
       <p className="text-sm">Aturan deterministik tanpa threshold numerik: hanya kondisi struktural yang sudah terekam (selisih delivery, coverage, alokasi, frame sampling). Input kurang = status insufficient-data, bukan klaim.</p>
       <p className="text-sm text-slate-600">Konfigurasi aturan bersifat global dan <strong>read-only</strong> pada kandidat ini: belum ada kontrak izin administrasi global (Gate B OPEN), sehingga mutasi ditolak backend untuk semua pengguna site.</p>
       {rulesError && <p role="alert" className="rounded border border-red-300 bg-red-50 p-3 text-sm">{rulesError}</p>}
@@ -272,7 +275,7 @@ function InsightsContext({ context, explainRule }: Props & { context: ReturnType
         Evaluasi rekomendasi (POST, idempoten)
       </button>}
       <p>Evaluasi adalah tindakan POST yang dapat menambah alert baru. Membuka sumber hanya membaca (GET).</p>
-      {evaluationLocked && <p role="alert">Hasil evaluasi UNKNOWN atau pengaman penyimpanan tidak tersedia. Operasi tetap terkunci; GET tidak membuka kunci dan tidak ada retry otomatis.</p>}
+      {evaluationLocked && <p role="alert">Hasil evaluasi UNKNOWN atau pengaman penyimpanan tidak tersedia. Hasil belum terkonfirmasi; jangan kirim ulang. Operasi tetap terkunci; GET tidak membuka kunci dan tidak ada retry otomatis.</p>}
       {evaluationLoading && <LoadingState label="Mengevaluasi…" />}
       <form className="grid gap-3 sm:grid-cols-4" noValidate onSubmit={applyFilters}>
         <label>Dari tanggal pencatatan (UTC)<input className={field} type="date" value={filters.recorded_from ?? ''} onChange={event => setFilters({ ...filters, recorded_from: event.target.value })} /></label>
@@ -294,24 +297,30 @@ function InsightsContext({ context, explainRule }: Props & { context: ReturnType
           <p>Penjelasan jenis aturan, bukan konfirmasi kondisi sumber saat ini:</p>
           <p>{explainRule?.(alert.rule_code)?.explanation ?? "Baca teks backend tersimpan berikut; panel hanya menampilkan catatan sumber saat ini."}</p>
           <p>{ALERT_DISCLAIMER}</p>
-          <details open><summary>Teks backend tersimpan (verbatim)</summary>
+          <details open><summary>Teks tercatat sistem (asli, tidak diterjemahkan)</summary>
             <p className="whitespace-pre-wrap">{alert.detected_issue}</p>
             <p className="whitespace-pre-wrap">{alert.recommended_action}</p>
           </details>
           <p>Status tersimpan: <strong>{labelFor(ALERT_STATUS_LABELS, alert.state)}</strong> ({alert.state}) · Label bukti per aturan: {labelFor(ALERT_COVERAGE_LABELS, alert.coverage)} ({alert.coverage})</p>
-          <p>Coverage ditetapkan per aturan; bukan persentase atau hasil ukur kelengkapan data.</p>
+          <p>Tingkat bukti yang ditetapkan per aturan; bukan persentase kelengkapan.</p>
           <span className="block text-xs">Sumber: {labelFor(ALERT_TARGET_LABELS, alert.target_type)} ({alert.target_type}) <SourceTarget targetType={alert.target_type} targetRef={alert.target_ref} /> · {alert.rule_code} {alert.rule_version} · {alert.recorded_at}</span>
           {alert.ack_reason && <span className="block text-xs">Alasan: {alert.ack_reason}</span>}
-          <button type="button" onClick={() => chooseAlert(alert, true)}>Lihat sumber</button>
-          {canAck && alert.state === 'open' && <button type="button" onClick={() => chooseAlert(alert, false)}>Pilih alert ini</button>}
+          <button id={`alert-source-trigger-${alert.recommendation_id}`} type="button" onClick={event => chooseAlert(alert, event.currentTarget)}>Lihat sumber</button>
+          {canAck && alert.state === 'open' && <button type="button" onClick={event => chooseAlert(alert, event.currentTarget)}>Pilih alert ini</button>}
         </li>)}
       </ul>
-      {sourceSelection && <AlertSourcePanel key={`${alertContextKey(context)}:${sourceSelection.sequence}`} alert={sourceSelection.alert} />}
+      {sourceSelection && <AlertSourcePanel key={`${alertContextKey(context)}:${sourceSelection.sequence}`} alert={sourceSelection.alert} onClose={() => {
+        if (!current()) return;
+        setSourceSelection(null);
+        const trigger = sourceTrigger.current;
+        const fallback = document.getElementById(`alert-source-trigger-${sourceSelection.alert.recommendation_id}`);
+        (trigger?.isConnected ? trigger : fallback ?? alertHeading.current)?.focus();
+      }} />}
       {evaluation && <div className="space-y-2 text-sm">
         <p>{evaluation.note} · {evaluation.rule_version}</p>
         {evaluation.insufficient.map(item => <p key={`${item.rule_code}:${item.target_ref}`}>
           <strong>Tidak ada kesimpulan ({item.state})</strong> · {explainRule?.(item.rule_code)?.insufficientData ?? "Data belum cukup untuk menyimpulkan."}
-          <span className="block whitespace-pre-wrap">Alasan backend (verbatim): {item.reason}</span>
+          <span className="block whitespace-pre-wrap"><span>Teks tercatat sistem (asli, tidak diterjemahkan)</span><span className="block whitespace-pre-wrap">{item.reason}</span></span>
           <span className="block">Hasil ini tidak disimpan dan hilang setelah halaman dimuat ulang. Tidak ada tindakan keputusan untuk hasil ini.</span>
           Sumber: {item.target_type} {item.target_ref} · {item.rule_code}
         </p>)}
@@ -323,11 +332,11 @@ function InsightsContext({ context, explainRule }: Props & { context: ReturnType
             <option value="acknowledged">Tinjauan tercatat</option><option value="dismissed">Ditutup oleh petugas</option>
           </select>
         </label>
-        <label className="block">Alasan (wajib, tercatat)<input ref={reasonInput} maxLength={300} aria-describedby="ack-explanation" className={field} value={ack.reason} onChange={e => setAck(v => ({ ...v, reason: e.target.value }))} /></label>
+        <label className="block">Alasan (wajib, tercatat)<input maxLength={300} aria-describedby="ack-explanation" className={field} value={ack.reason} onChange={e => setAck(v => ({ ...v, reason: e.target.value }))} /></label>
         <button type="submit" disabled={busy || evaluationLoading || ackLocked} className="self-end rounded bg-sky-700 px-4 py-2 text-white disabled:opacity-50">Catat tindakan</button>
       </form>}
       <p id="ack-explanation">Tinjauan tercatat atau ditutup oleh petugas bukan bukti masalah selesai dan tidak mengubah catatan sumber.</p>
-      {ackLocked && ack.recommendation_id && <p role="alert">Tindakan pada alert ini UNKNOWN; tetap terkunci tanpa pengiriman ulang otomatis.</p>}
+      {ackLocked && ack.recommendation_id && <p role="alert">Tindakan pada alert ini UNKNOWN. Hasil belum terkonfirmasi; jangan kirim ulang. Operasi tetap terkunci tanpa pengiriman ulang otomatis.</p>}
       <FeedbackLine feedback={ackFeedback} />
     </section>
   </div>;

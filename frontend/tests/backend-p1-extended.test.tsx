@@ -289,7 +289,7 @@ describe("BackendInsightsPage (FR-203/204)", () => {
     await user.click(screen.getByRole("button", { name: /Catat tindakan/i }));
     await waitFor(() => expect(acknowledgeBackendRecommendation).toHaveBeenCalledWith(REC_ID,
       { state: "acknowledged", reason: "reviewed with the site team" }));
-    expect(await screen.findByText(/acknowledged dengan alasan tercatat/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Tinjauan tercatat.*alasan tercatat/i)).toBeInTheDocument();
     expect(evaluateRecommendations).toHaveBeenCalledTimes(1);
   });
 

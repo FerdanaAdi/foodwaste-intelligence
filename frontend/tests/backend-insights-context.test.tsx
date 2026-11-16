@@ -55,7 +55,7 @@ afterEach(()=>{cleanup();invalidateAuth();sessionStorage.clear();});
 it("preserves historical backend text literally and explains rule-level coverage without a percentage",async()=>{
  const ui=render(page());await screen.findByText(alert.detected_issue);
  expect(screen.getByText(alert.recommended_action)).toBeVisible();expect(ui.container.querySelector("script")).toBeNull();
- expect(screen.getByText(/Coverage ditetapkan per aturan; bukan persentase/)).toBeVisible();
+ expect(screen.getByText(/Tingkat bukti yang ditetapkan per aturan; bukan persentase kelengkapan/)).toBeVisible();
  expect(screen.getByText("Cakupan pengukuran kejadian belum cukup")).toBeVisible();expect(domainPosts()).toHaveLength(0);
 });
 it("provides a separate integration seam for reviewed Copilot text without replacing historical strings",async()=>{
@@ -69,11 +69,12 @@ it("opens the source with GET only and does not evaluate or acknowledge automati
  expect(domainPosts()).toHaveLength(0);expect(reader.mock.calls.filter(([,o])=>o?.method==="POST")).toHaveLength(0);
  expect(screen.getByText(alert.recorded_at,{selector:"time"})).toBeVisible();
 });
-it("moves keyboard focus to the reason and records the selected alert with the existing contract",async()=>{
+it("focuses the source heading and records the selected alert with the existing contract",async()=>{
  render(page());const user=userEvent.setup();await user.click(await screen.findByRole("button",{name:"Pilih alert ini"}));
- const input=screen.getByLabelText(/Alasan \(wajib/);expect(input).toHaveFocus();expect(input).toHaveAttribute("aria-describedby","ack-explanation");
+ expect(screen.getByRole("heading",{name:"Catatan sumber saat ini"})).toHaveFocus();
+ const input=screen.getByLabelText(/Alasan \(wajib/);expect(input).toHaveAttribute("aria-describedby","ack-explanation");
  await user.type(input,"<script>synthetic reason</script>");await user.click(screen.getByRole("button",{name:"Catat tindakan"}));
- await screen.findByText(/Rekomendasi acknowledged dengan alasan tercatat/);
+ await screen.findByText(/Tinjauan tercatat.*alasan tercatat/);
  const posts=domainPosts();expect(posts).toHaveLength(1);expect(posts[0][0]).toBe(path);
  expect(JSON.parse(String(posts[0][1]?.body))).toEqual({state:"acknowledged",reason:"<script>synthetic reason</script>"});
  expect(screen.getByText(/Ini bukan bukti masalah selesai/)).toBeVisible();
@@ -116,7 +117,7 @@ it("serializes a double submit locally without retry and allows normal definitiv
  const form=screen.getByRole("button",{name:"Catat tindakan"}).closest("form")!;
  fireEvent.submit(form);fireEvent.submit(form);await waitFor(()=>expect(domainPosts()).toHaveLength(1));
  await act(async()=>ack.resolve(authResponse({...alert,state:"acknowledged",ack_reason:"checked",ack_actor:writer.principal_id,ack_at:"2026-11-10T00:00:00Z"},200,writer)));
- await screen.findByText(/Rekomendasi acknowledged/);expect(sessionStorage.getItem(`fwi-p1-pending:${writer.principal_id}:${SITE}:${path}`)).toBeNull();
+ await screen.findByText(/Tinjauan tercatat.*alasan tercatat/);expect(sessionStorage.getItem(`fwi-p1-pending:${writer.principal_id}:${SITE}:${path}`)).toBeNull();
 });
 it("hides writer controls for a Reader while source GET remains available",async()=>{
  await prepareSession({...writer,sites:[{site_id:SITE,permissions:["alert.read","event.read","measurement.read"]}]});install();
@@ -185,11 +186,85 @@ it("keeps a historical backend claim and acknowledgement reason verbatim rather 
  expect(screen.getByText(ALERT_DISCLAIMER)).toBeVisible();expect(screen.queryByRole("button",{name:"Pilih alert ini"})).not.toBeInTheDocument();
 });
 
-it("supports keyboard-only alert selection and moves focus to the reason without POST",async()=>{
+it("supports keyboard-only panel focus, return focus and reason editing without POST",async()=>{
  render(page());const user=userEvent.setup();const choose=await screen.findByRole("button",{name:"Pilih alert ini"});
  for(let i=0;i<35&&document.activeElement!==choose;i++)await user.tab();
  expect(choose).toHaveFocus();await user.keyboard("{Enter}");
- const reason=screen.getByLabelText(/Alasan \(wajib/);expect(reason).toHaveFocus();
+ expect(screen.getByRole("heading",{name:"Catatan sumber saat ini"})).toHaveFocus();
+ await user.tab();expect(screen.getByRole("button",{name:"Tutup panel sumber"})).toHaveFocus();
+ await user.keyboard("{Enter}");expect(choose).toHaveFocus();expect(screen.queryByRole("region")).not.toBeInTheDocument();
+ const reason=screen.getByLabelText(/Alasan \(wajib/);
+ for(let i=0;i<12&&document.activeElement!==reason;i++)await user.tab();
+ expect(reason).toHaveFocus();
  await user.keyboard("Catatan sintetis melalui keyboard");expect(reason).toHaveValue("Catatan sintetis melalui keyboard");
  expect(domainPosts()).toHaveLength(0);
+});
+
+it.each([["acknowledged","Tinjauan tercatat"],["dismissed","Ditutup oleh petugas"]] as const)("reports %s distinctly in a status region without claiming resolution",async(state,label)=>{
+ render(page());const user=userEvent.setup();await user.click(await screen.findByRole("button",{name:"Pilih alert ini"}));
+ expect(screen.getByRole("heading",{name:"Catatan sumber saat ini"})).toHaveFocus();
+ await user.selectOptions(screen.getByLabelText("Tindakan"),state);
+ await user.type(screen.getByLabelText(/Alasan \(wajib/),"Pemeriksaan sintetis");
+ await user.click(screen.getByRole("button",{name:"Catat tindakan"}));
+ const message=await screen.findByText(new RegExp(`${label} untuk alert`));
+ expect(message).toHaveAttribute("role","status");expect(message).toHaveTextContent("Ini bukan bukti masalah selesai");
+ expect(JSON.parse(String(domainPosts()[0][1]?.body))).toEqual({state,reason:"Pemeriksaan sintetis"});
+});
+it("returns focus to the exact source trigger on close without POST or late focus theft",async()=>{
+ const old=deferred<Response>();respond=(u,o)=>u===`/demo/v0.1/events/${EVENT}`?old.promise:defaultResponse(u,o);
+ render(page());const user=userEvent.setup();const trigger=await screen.findByRole("button",{name:"Lihat sumber"});
+ await user.click(trigger);expect(screen.getByRole("heading",{name:"Catatan sumber saat ini"})).toHaveFocus();
+ await user.click(screen.getByRole("button",{name:"Tutup panel sumber"}));expect(trigger).toHaveFocus();
+ expect(screen.queryByRole("region")).not.toBeInTheDocument();
+ await act(async()=>old.resolve(authResponse(fixture.event,200,writer)));
+ expect(trigger).toHaveFocus();expect(screen.queryByRole("region")).not.toBeInTheDocument();expect(domainPosts()).toHaveLength(0);
+});
+it("clears prior evaluation and reason in the same alert-selection transition",async()=>{
+ rows=[alert,{...alert,recommendation_id:ID_B,target_type:"meal_service"}];
+ render(page());const user=userEvent.setup();expect(await screen.findAllByText(alert.detected_issue)).toHaveLength(2);
+ await user.click(screen.getByRole("button",{name:/Evaluasi rekomendasi/}));await screen.findByText(/Tidak ada kesimpulan/);
+ const choices=screen.getAllByRole("button",{name:"Pilih alert ini"});await user.click(choices[0]);
+ expect(screen.queryByText(/Backend original note/)).not.toBeInTheDocument();expect(screen.queryByText(/Tidak ada kesimpulan/)).not.toBeInTheDocument();
+ await user.type(screen.getByLabelText(/Alasan \(wajib/),"OLD A DRAFT");await user.click(choices[1]);
+ expect(screen.getByLabelText(/Alasan \(wajib/)).toHaveValue("");expect(screen.getByLabelText("UUID rekomendasi")).toHaveValue(ID_B);
+ expect(screen.queryByDisplayValue("OLD A DRAFT")).not.toBeInTheDocument();expect(domainPosts()).toHaveLength(1);
+});
+it("clears evaluation, selection and draft on site A to B to A before a new result is read",async()=>{
+ render(page());const user=userEvent.setup();await user.click(await screen.findByRole("button",{name:"Pilih alert ini"}));
+ await user.type(screen.getByLabelText(/Alasan \(wajib/),"PRIVATE A DRAFT");
+ await user.click(screen.getByRole("button",{name:/Evaluasi rekomendasi/}));await screen.findByText(/Backend original note/);
+ act(()=>selectSite(OTHER));expect(screen.queryByText(/Backend original note/)).not.toBeInTheDocument();
+ expect(screen.getByLabelText(/Alasan \(wajib/)).toHaveValue("");expect(screen.queryByRole("region")).not.toBeInTheDocument();
+ act(()=>selectSite(SITE));expect(screen.getByLabelText("UUID rekomendasi")).toHaveValue("");expect(screen.getByLabelText(/Alasan \(wajib/)).toHaveValue("");
+ expect(screen.queryByText(/Backend original note/)).not.toBeInTheDocument();await screen.findByText(alert.detected_issue);
+});
+it("does zero additional network calls for a pre-existing pending acknowledgement marker",async()=>{
+ sessionStorage.setItem(`fwi-p1-pending:${writer.principal_id}:${SITE}:${path}`,"pending");
+ render(page());const user=userEvent.setup();await user.click(await screen.findByRole("button",{name:"Pilih alert ini"}));await screen.findByText(/1 kejadian · 1 observasi/);
+ const calls=reader.mock.calls.length;const button=screen.getByRole("button",{name:"Catat tindakan"});expect(button).toBeDisabled();
+ await user.click(button);fireEvent.submit(button.closest("form")!);
+ expect(reader.mock.calls).toHaveLength(calls);expect(domainPosts()).toHaveLength(0);
+ expect(screen.getAllByText(/belum terkonfirmasi; jangan kirim ulang/i).length).toBeGreaterThan(0);
+});
+it("shows the three v0.3 timestamp labels and exact no-snapshot warning without changing alert state",async()=>{
+ render(page());await userEvent.click(await screen.findByRole("button",{name:"Lihat sumber"}));await screen.findByText(/1 kejadian · 1 observasi/);
+ const region=screen.getByRole("region");
+ for(const label of ["Waktu pengukuran dicatat","Waktu pengukuran dilakukan"])expect(within(region).getByText(label)).toBeVisible();
+ expect(within(region).getByText(/Waktu evaluasi yang mencatat alert/)).toBeVisible();
+ expect(within(region).getByText("Urutan waktu pencatatan bukan bukti bahwa kondisi sumber berubah atau bahwa alert tidak berlaku. Sistem tidak menyimpan salinan kondisi sumber saat alert dibuat.")).toBeVisible();
+ expect(within(region).getAllByText(/zona waktu: UTC \(Z\)/).length).toBeGreaterThan(0);
+ expect(within(region).getAllByText(/zona waktu: \+08:00/).length).toBeGreaterThan(0);
+ expect(screen.getByText(/Status tersimpan:/)).toHaveTextContent("Terbuka");expect(domainPosts()).toHaveLength(0);
+ expect(screen.getByText("Teks tercatat sistem (asli, tidak diterjemahkan)")).toBeVisible();
+});
+
+it("returns focus to the same alert source control when the open-only selection button disappears",async()=>{
+ respond=(u,o)=>{
+  if(u===path){rows=[{...alert,state:"acknowledged",ack_reason:"checked",ack_actor:writer.principal_id,ack_at:"2026-11-10T00:00:00Z"}];return Promise.resolve(authResponse(rows[0],200,writer));}
+  return defaultResponse(u,o);
+ };
+ render(page());const user=userEvent.setup();await user.click(await screen.findByRole("button",{name:"Pilih alert ini"}));
+ await user.type(screen.getByLabelText(/Alasan \(wajib/),"checked");await user.click(screen.getByRole("button",{name:"Catat tindakan"}));
+ await screen.findByText(/Tinjauan tercatat untuk alert/);await waitFor(()=>expect(screen.queryByRole("button",{name:"Pilih alert ini"})).not.toBeInTheDocument());
+ await user.click(screen.getByRole("button",{name:"Tutup panel sumber"}));expect(screen.getByRole("button",{name:"Lihat sumber"})).toHaveFocus();
 });

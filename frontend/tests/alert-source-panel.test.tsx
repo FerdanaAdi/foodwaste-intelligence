@@ -54,8 +54,8 @@ it("preserves long decimals, mixed bases, estimation, provenance and both timest
   for (const text of ["estimated", "raw", "as_served", alert.recorded_at]) expect(screen.getByText(text)).toBeVisible();
   expect(screen.getAllByText(measurement.provenance)).toHaveLength(2);
   expect(screen.getAllByText(measurement.recorded_at)).toHaveLength(2);
-  expect(screen.getByText(/tidak dapat dipastikan apa yang berbeda/)).toBeVisible();
-  expect(screen.queryByText(/total massa|rata-rata|alert tidak berlaku/i)).not.toBeInTheDocument();
+  expect(screen.getByText(/Urutan waktu pencatatan bukan bukti bahwa kondisi sumber berubah/)).toBeVisible();
+  expect(screen.queryByText(/^(?:total massa|rata-rata|alert tidak berlaku)/i)).not.toBeInTheDocument();
 });
 it("distinguishes no recorded measurement from measured zero", async () => {
   render(view()); expect(await screen.findByText(/Belum ada pengukuran tercatat; bukan pengukuran nol/)).toBeVisible();
@@ -139,4 +139,13 @@ it("reads sources as an authorized reader without any mutation", async () => {
   await prepareSession({ ...sessionA,sites:[{...sessionA.sites[0],permissions:["event.read","measurement.read","alert.read","delivery.read"]}] });
   render(view());expect(await screen.findByText(E)).toBeVisible();
   expect(vi.mocked(fetch).mock.calls.every(([,o])=>!o?.method||o.method==="GET")).toBe(true);
+});
+
+it("aborts A and ignores its stale error/final status while B is still loading",async()=>{
+ const a=deferred<BackendEvent>();const b=deferred<BackendEvent>();
+ vi.mocked(readBackendEvent).mockReturnValueOnce(a.promise).mockReturnValueOnce(b.promise);
+ const ui=render(view());const firstSignal=vi.mocked(readBackendEvent).mock.calls[0][1];ui.rerender(view(other));
+ expect(firstSignal.aborted).toBe(true);await act(async()=>a.reject(new Error("OLD FAILURE")));
+ expect(screen.getByRole("status")).toHaveTextContent("Memuat catatan sumber");expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+ await act(async()=>b.resolve({...event,event_id:B}));expect(await screen.findByText(B)).toBeVisible();expect(screen.queryByRole("status")).not.toBeInTheDocument();
 });
