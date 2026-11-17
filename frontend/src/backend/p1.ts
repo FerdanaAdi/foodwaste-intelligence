@@ -630,6 +630,9 @@ export function readDelivery(deliveryId: string, signal?: AbortSignal): Promise<
   return readJson(`/p1/v0.1/deliveries/${encodeURIComponent(deliveryId)}`, parseDelivery, signal);
 }
 
+export function readService(serviceId: string, signal?: AbortSignal): Promise<Service> {
+  return readJson(`/p1/v0.1/services/${encodeURIComponent(serviceId)}`, parseService, signal);
+}
 export async function createBackendDelivery(input: {
   to_site_id: string; dispatch_quantity: string; mass_basis: string; dispatched_at: string,
 }): Promise<WriteResult<Delivery>> {

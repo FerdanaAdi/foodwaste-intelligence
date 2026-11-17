@@ -3,7 +3,7 @@ import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import AlertSourcePanel from "@/components/alerts/AlertSourcePanel";
 import { readBackendEvent, readBackendMeasurements } from "@/backend/client";
-import { readDelivery, type Delivery } from "@/backend/p1";
+import { readDelivery, readService, type Delivery, type Service } from "@/backend/p1";
 import { invalidateAuth, selectSite } from "@/backend/auth";
 import { prepareSession, sessionA } from "./backend-auth-fixture";
 import fixture from "./fixtures/backend-detail.json";
@@ -11,7 +11,7 @@ import type { BackendEvent, BackendMeasurement } from "@/backend/contract";
 import type { AlertSource } from "@/components/alerts/useAlertSource";
 
 vi.mock("@/backend/client", () => ({ readBackendEvent: vi.fn(), readBackendMeasurements: vi.fn() }));
-vi.mock("@/backend/p1", () => ({ readDelivery: vi.fn() }));
+vi.mock("@/backend/p1", () => ({ readDelivery: vi.fn(), readService: vi.fn() }));
 const E = fixture.event.event_id;
 const B = "33333333-3333-4333-8333-333333333334";
 const SITE_B = "22222222-2222-4222-8222-222222222223";
@@ -76,7 +76,7 @@ it("preserves unknown receiving values in the source component without fabricati
   render(view({ ...alert, target_type: "delivery" })); expect(await screen.findByText("not_received")).toBeVisible();
   expect(screen.getAllByText("Belum dicatat (null)")).toHaveLength(2); expect(screen.queryByText("0 kg")).not.toBeInTheDocument();
 });
-it.each(["meal_service", "disposition", "unrecognized"])("explicitly marks unsupported %s without GET", target_type => {
+it.each(["disposition", "unrecognized"])("explicitly marks unsupported %s without GET", target_type => {
   render(view({ ...alert, target_type })); expect(screen.getByText(/Tampilan sumber belum tersedia/)).toBeVisible();
   expect(readBackendEvent).not.toHaveBeenCalled(); expect(readDelivery).not.toHaveBeenCalled();
 });
@@ -148,4 +148,76 @@ it("aborts A and ignores its stale error/final status while B is still loading",
  expect(firstSignal.aborted).toBe(true);await act(async()=>a.reject(new Error("OLD FAILURE")));
  expect(screen.getByRole("status")).toHaveTextContent("Memuat catatan sumber");expect(screen.queryByRole("alert")).not.toBeInTheDocument();
  await act(async()=>b.resolve({...event,event_id:B}));expect(await screen.findByText(B)).toBeVisible();expect(screen.queryByRole("status")).not.toBeInTheDocument();
+});
+
+const S = "44444444-4444-4444-8444-444444444441";
+const service: Service = { service_id: S, organization_id: event.organization_id, site_id: event.site_id,
+  delivery_id: null, served_count: 120, served_mass: "30.500", original_unit: "kg", mass_basis: "as_served",
+  leftover_event_id: null, sampling_frame: "kelas 1-6", sample_size: 12, sampling_method: "systematic",
+  coverage: null, recorded_at: "2026-11-01T01:00:00Z", sampling_coverage_status: "framed", estimate_note: "server note" };
+const serviceAlert: AlertSource = { ...alert, target_type: "meal_service", target_ref: S, rule_code: "sampling_frame_missing" };
+it("shows recorded sampling fields of a same-site meal service without extrapolation", async () => {
+  vi.mocked(readService).mockResolvedValue(service);
+  render(view(serviceAlert));
+  expect(await screen.findByText("kelas 1-6")).toBeVisible();
+  for (const text of ["12", "systematic", "framed", "120", "30.500 kg", "as_served", service.recorded_at]) expect(screen.getByText(text)).toBeVisible();
+  expect(screen.getByText(/tidak memperluas sampel menjadi cakupan populasi/)).toBeVisible();
+  expect(screen.queryByText(/snapshot saat alert dibuat/i)).not.toBeInTheDocument();
+  expect(readService).toHaveBeenCalledWith(S, expect.any(AbortSignal));
+  expect(readBackendEvent).not.toHaveBeenCalled(); expect(readDelivery).not.toHaveBeenCalled();
+  expect(vi.mocked(fetch).mock.calls.every(([,o]) => !o?.method || o.method === "GET")).toBe(true);
+});
+it("keeps null service values unavailable and distinct from a recorded zero", async () => {
+  vi.mocked(readService).mockResolvedValue({ ...service, sampling_frame: null, sample_size: null, sampling_method: null,
+    served_count: null, served_mass: null, original_unit: null, mass_basis: null, sampling_coverage_status: "not_sampled" });
+  render(view(serviceAlert));
+  expect(await screen.findByText("not_sampled")).toBeVisible();
+  expect(screen.getAllByText("Belum dicatat (null)")).toHaveLength(6);
+  expect(screen.queryByText("0")).not.toBeInTheDocument(); expect(screen.queryByText("0 kg")).not.toBeInTheDocument();
+});
+it("renders a recorded zero served count and sample size as 0, not unavailable", async () => {
+  vi.mocked(readService).mockResolvedValue({ ...service, served_count: 0, sample_size: 0, served_mass: "0", sampling_coverage_status: "unframed_sample" });
+  render(view(serviceAlert));
+  expect(await screen.findByText("0 kg")).toBeVisible(); expect(screen.getAllByText("0")).toHaveLength(2);
+});
+it.each([
+  ["foreign site", { site_id: SITE_B }], ["foreign organization", { organization_id: "11111111-1111-4111-8111-111111111119" }],
+  ["different service id", { service_id: B }],
+])("rejects a meal service with %s", async (_name, patch) => {
+  vi.mocked(readService).mockResolvedValue({ ...service, ...patch, sampling_frame: "FOREIGN SECRET" });
+  render(view(serviceAlert));
+  expect(await screen.findByRole("alert")).toBeVisible(); expect(screen.queryByText("FOREIGN SECRET")).not.toBeInTheDocument();
+});
+it("rejects an invalid meal service UUID before any request", () => {
+  render(view({ ...serviceAlert, target_ref: "not-a-uuid" }));
+  expect(screen.getByText(/Tampilan sumber belum tersedia/)).toBeVisible(); expect(readService).not.toHaveBeenCalled();
+});
+it("does not request a meal service for an alert from another site", () => {
+  render(view({ ...serviceAlert, site_id: SITE_B }));
+  expect(screen.getByRole("status")).toHaveTextContent("Konteks akses berubah"); expect(readService).not.toHaveBeenCalled();
+});
+it.each([401, 403, 404, 503])("does not reveal meal service response details on HTTP %s and does not retry", async status => {
+  vi.mocked(readService).mockRejectedValue(new Error(`${status}: private foreign title`));
+  render(view(serviceAlert));
+  expect(await screen.findByRole("alert")).toHaveTextContent("Sumber tidak dapat dibaca");
+  expect(screen.queryByText(/private foreign title/)).not.toBeInTheDocument(); expect(readService).toHaveBeenCalledTimes(1);
+});
+it("hides meal service data across site A to B to A and discards the late A response", async () => {
+  const old = deferred<Service>();
+  vi.mocked(readService).mockReturnValueOnce(old.promise).mockResolvedValueOnce({ ...service, sampling_frame: "FRAME NEW" });
+  render(view(serviceAlert)); act(() => selectSite(SITE_B));
+  expect(screen.queryByText(alert.recorded_at)).not.toBeInTheDocument();
+  act(() => selectSite(event.site_id)); expect(await screen.findByText("FRAME NEW")).toBeVisible();
+  await act(async () => old.resolve({ ...service, sampling_frame: "STALE FRAME" }));
+  expect(screen.queryByText("STALE FRAME")).not.toBeInTheDocument(); expect(screen.getByText("FRAME NEW")).toBeVisible();
+  expect(readService).toHaveBeenCalledTimes(2);
+});
+it("discards a late meal service error after logout and new login, and aborts on unmount", async () => {
+  const old = deferred<Service>();
+  vi.mocked(readService).mockReturnValueOnce(old.promise).mockResolvedValueOnce(service);
+  const ui = render(view(serviceAlert)); const signal = vi.mocked(readService).mock.calls[0][1] as AbortSignal;
+  act(() => invalidateAuth()); expect(signal.aborted).toBe(true);
+  await act(async () => prepareSession(owner)); expect(await screen.findByText("kelas 1-6")).toBeVisible();
+  await act(async () => old.reject(new Error("OLD LOGIN"))); expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  ui.unmount();
 });

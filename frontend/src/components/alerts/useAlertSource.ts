@@ -2,12 +2,12 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { assertCurrent, authSnapshot, subscribeAuth } from "@/backend/auth";
 import { readBackendEvent, readBackendMeasurements } from "@/backend/client";
 import { isUUID, type BackendEvent, type BackendMeasurement } from "@/backend/contract";
-import { readDelivery, type Delivery, type Recommendation } from "@/backend/p1";
+import { readDelivery, readService, type Delivery, type Recommendation, type Service } from "@/backend/p1";
 
 export type AlertSource = Pick<Recommendation, "recommendation_id" | "organization_id" | "site_id" |
   "target_type" | "target_ref" | "rule_code" | "rule_version" | "recorded_at">;
 type SourceData = { kind: "event"; event: BackendEvent; measurements: BackendMeasurement[] } |
-  { kind: "delivery"; delivery: Delivery };
+  { kind: "delivery"; delivery: Delivery } | { kind: "service"; service: Service };
 type SourceState = { key: string; phase: "loading" | "ready" | "error" | "unavailable"; data?: SourceData };
 
 /** Include generation: site/session A -> B -> A must never reuse A's old result. */
@@ -21,7 +21,7 @@ export function useAlertSource(alert: AlertSource) {
   const key = JSON.stringify([alertContextKey(auth), alert.recommendation_id, alert.site_id,
     alert.organization_id, alert.target_type, alert.target_ref, alert.rule_version, alert.recorded_at]);
   const allowed = auth.phase === "ready" && !!auth.session && alert.site_id === auth.site;
-  const supported = isUUID(alert.target_ref) && ["waste_event", "delivery"].includes(alert.target_type);
+  const supported = isUUID(alert.target_ref) && ["waste_event", "delivery", "meal_service"].includes(alert.target_type);
   const [state, setState] = useState<SourceState>({ key, phase: "loading" });
   const sequence = useRef(0);
   useEffect(() => {
@@ -47,6 +47,13 @@ export function useAlertSource(alert: AlertSource) {
             event.organization_id !== alert.organization_id ||
             measurements.some(row => row.event_id !== event.event_id)) throw new Error("Source context mismatch");
         return { kind: "event", event, measurements };
+      }
+      if (alert.target_type === "meal_service") {
+        const service = await readService(alert.target_ref, controller.signal);
+        assertCurrent(expected);
+        if (service.service_id !== alert.target_ref || service.site_id !== expected.site ||
+            service.organization_id !== alert.organization_id) throw new Error("Source context mismatch");
+        return { kind: "service", service };
       }
       const delivery = await readDelivery(alert.target_ref, controller.signal);
       assertCurrent(expected);

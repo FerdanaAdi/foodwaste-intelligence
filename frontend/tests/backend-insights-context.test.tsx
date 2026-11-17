@@ -141,14 +141,14 @@ it("does not show a late evaluation after logout/login to a new session",async()
  expect(screen.queryByText("STALE EVALUATION")).not.toBeInTheDocument();expect(screen.getByRole("button",{name:/Evaluasi rekomendasi/})).toBeDisabled();
 });
 it("keeps unsupported sources explicit and does not expose HELD KPI numbers",async()=>{
- rows=[{...alert,target_type:"meal_service"}];render(page());await screen.findByText(alert.detected_issue);
+ rows=[{...alert,target_type:"disposition"}];render(page());await screen.findByText(alert.detected_issue);
  expect(screen.getByText(/Tampilan sumber belum tersedia/)).toBeVisible();
  await userEvent.click(screen.getByRole("button",{name:"Lihat sumber"}));expect(screen.getByRole("region")).toHaveTextContent("Tampilan sumber belum tersedia");
  expect(domainPosts()).toHaveLength(0);expect(reader.mock.calls.some(([u])=>String(u).startsWith("/p2/v0.1/kpi/"))).toBe(false);
 });
 
 it("changes selected alert A to B to A without accepting the first A source",async()=>{
- rows=[alert,{...alert,recommendation_id:ID_B,target_type:"meal_service"}];
+ rows=[alert,{...alert,recommendation_id:ID_B,target_type:"disposition"}];
  const old=deferred<Response>();let sourceReads=0;
  respond=(u,o)=>u===`/demo/v0.1/events/${EVENT}`&&++sourceReads===1?old.promise:defaultResponse(u,o);
  render(page());const user=userEvent.setup();const buttons=await screen.findAllByRole("button",{name:"Lihat sumber"});
